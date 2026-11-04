@@ -1,0 +1,11 @@
+// Global stylesheet: design system entry point.
+// Tailwind (layout utilities) is loaded separately from src/tailwind.css, inside cascade layers.
+@use 'styles/tokens';
+@use 'styles/dark';
+@use 'styles/material-theme';
+@use 'styles/typography';
+
+html,
+body {
+  height: 100%;
+}

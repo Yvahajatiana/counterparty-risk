@@ -1,0 +1,40 @@
+<mat-toolbar class="cr-topbar" role="banner">
+  <a class="cr-brand" routerLink="/">Counterparty Risk</a>
+  <span class="flex-1"></span>
+  <button
+    mat-stroked-button
+    type="button"
+    class="cr-theme-toggle"
+    (click)="cycleTheme()"
+    [attr.aria-label]="'Theme: ' + themeLabel() + '. Change theme'"
+  >
+    Theme: {{ themeLabel() }}
+  </button>
+</mat-toolbar>
+
+<mat-sidenav-container class="cr-container">
+  <mat-sidenav mode="side" opened class="cr-sidenav">
+    <nav aria-label="Widgets">
+      <mat-nav-list>
+        @for (item of navItems; track item.path) {
+          <a
+            mat-list-item
+            [routerLink]="item.path"
+            routerLinkActive
+            #rla="routerLinkActive"
+            [activated]="rla.isActive"
+            [attr.aria-current]="rla.isActive ? 'page' : null"
+          >
+            {{ item.code }}
+          </a>
+        }
+      </mat-nav-list>
+    </nav>
+  </mat-sidenav>
+
+  <mat-sidenav-content>
+    <main class="p-4">
+      <router-outlet />
+    </main>
+  </mat-sidenav-content>
+</mat-sidenav-container>

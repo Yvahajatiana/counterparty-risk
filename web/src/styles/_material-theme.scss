@@ -1,0 +1,42 @@
+// Angular Material M3 theme wired on the corporate design tokens.
+@use '@angular/material' as mat;
+@use './theme-colors' as palettes;
+
+:root {
+  // theme-type: color-scheme emits light-dark() values, so Material follows the `color-scheme`
+  // property set by _tokens.scss (light) and _dark.scss (dark) without a second theme.
+  @include mat.theme(
+    (
+      color: (
+        primary: palettes.$primary-palette,
+        tertiary: palettes.$tertiary-palette,
+        theme-type: color-scheme,
+      ),
+      typography: (
+        plain-family: var(--cr-font-family),
+        brand-family: var(--cr-font-family),
+      ),
+      // Compact density for data-heavy risk screens.
+      density: -2,
+    )
+  );
+
+  // Pin the key system roles on the corporate tokens so Material, Tailwind and the charts
+  // share exactly the same colors in both themes.
+  @include mat.theme-overrides(
+    (
+      primary: var(--cr-color-primary),
+      on-primary: var(--cr-color-on-primary),
+      surface: var(--cr-color-surface),
+      background: var(--cr-color-surface),
+      on-surface: var(--cr-color-text),
+      on-background: var(--cr-color-text),
+      on-surface-variant: var(--cr-color-text-muted),
+      surface-container-lowest: var(--cr-color-surface),
+      surface-container-low: var(--cr-color-surface-alt),
+      surface-container: var(--cr-color-surface-alt),
+      outline-variant: var(--cr-color-border),
+      error: var(--cr-status-breach),
+    )
+  );
+}

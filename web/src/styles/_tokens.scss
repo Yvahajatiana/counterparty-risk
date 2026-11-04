@@ -1,0 +1,45 @@
+// Corporate design tokens, light theme (default).
+// Consumed by Angular Material (_material-theme.scss), Tailwind (src/tailwind.css)
+// and, later, AG Grid and Highcharts in styledMode (#14).
+// Every color is a hex literal on purpose: scripts/check-contrast.mjs parses this file
+// and _dark.scss to enforce WCAG 2.1 AA contrast in CI.
+
+@mixin light {
+  --cr-color-primary: #1f3a5f;
+  --cr-color-on-primary: #ffffff;
+  --cr-color-surface: #ffffff;
+  --cr-color-surface-alt: #f4f6f9;
+  --cr-color-text: #1b2430;
+  --cr-color-text-muted: #5b6675;
+  --cr-color-border: #d5dbe3;
+  --cr-color-topbar: #1f3a5f;
+  --cr-color-on-topbar: #ffffff;
+
+  // Limit utilisation thresholds: ok < 80 % <= warn < 100 % <= breach.
+  --cr-status-ok: #2e7d32;
+  --cr-status-warn: #b26a00;
+  --cr-status-breach: #b3261e;
+
+  // Colour-blind safe categorical palette derived from Okabe-Ito, darkened for light surfaces.
+  --cr-series-1: #0072b2;
+  --cr-series-2: #b35c00;
+  --cr-series-3: #007a5a;
+  --cr-series-4: #a8467f;
+  --cr-series-5: #7a6800;
+  --cr-series-6: #595959;
+}
+
+:root {
+  color-scheme: light;
+
+  @include light;
+
+  // Theme independent tokens.
+  --cr-font-family: 'Inter Variable', 'Inter', 'Segoe UI', system-ui, sans-serif;
+  --cr-font-numeric: tabular-nums;
+  // Material density scale used for risk tables; AG Grid row height to align with (#14).
+  --cr-density: -2;
+  --cr-grid-row-height: 28px;
+  --cr-topbar-height: 48px;
+  --cr-sidenav-width: 232px;
+}

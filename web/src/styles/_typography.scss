@@ -1,0 +1,33 @@
+// Self-hosted Inter variable font (SIL OFL 1.1). The font files are bundled by the Angular
+// builder and served from 'self': no Google Fonts or CDN, compatible with `font-src 'self'`.
+@use '@fontsource-variable/inter/wght.css';
+
+html {
+  font-family: var(--cr-font-family);
+  font-size: 14px;
+  line-height: 1.43;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  margin: 0;
+  background: var(--cr-color-surface-alt);
+  color: var(--cr-color-text);
+  font: var(--mat-sys-body-medium);
+}
+
+// Amounts, percentages and basis points must align in columns.
+.cr-numeric {
+  font-variant-numeric: var(--cr-font-numeric);
+  text-align: end;
+}
+
+.cr-text-muted {
+  color: var(--cr-color-text-muted);
+}
+
+.cr-page-title {
+  margin: 0 0 8px;
+  font: var(--mat-sys-headline-small);
+  color: var(--cr-color-text);
+}
