@@ -38,6 +38,10 @@ flowchart LR
     PG[("PostgreSQL<br/>RLS, roles, audit schema")]
   end
 
+  subgraph Z7["Z7 - Audit anchor (separate trust domain)"]
+    ANC[("Append-only anchor store")]
+  end
+
   subgraph Z5["Z5 - External open data (untrusted)"]
     EXT["GLEIF, ECB, BIS, EBA,<br/>FFIEC FR Y-9C, CFTC / CME SDR"]
   end
@@ -58,7 +62,9 @@ flowchart LR
   API -- "F7 TB2 HTTPS: OIDC metadata + JWKS" --> KC
   API -- "F8 TB4 SQL over TLS: role cr_reader + app.legal_entity_ids" --> PG
   API -- "F9 TB4 SQL over TLS: role cr_audit_writer, INSERT only" --> PG
-  BFF -- "F10 TB4 SQL over TLS: ticket store, Data Protection keys" --> PG
+  BFF -- "F10 TB4 SQL over TLS: ticket store, BFF key ring, role cr_bff_keys" --> PG
+  API -- "F19 TB4 SQL over TLS: API key ring, role cr_api_keys" --> PG
+  WRK -- "F20 TB4 HTTPS append-only: audit chain head" --> ANC
   WRK -- "F11 TB5 HTTPS GET: files, SDMX, APIs" --> EXT
   WRK -- "F12 local write: streamed download" --> QUA
   WRK -- "F13 TB4 SQL over TLS: role cr_writer, COPY + MERGE" --> PG
@@ -76,13 +82,13 @@ flowchart LR
 | TB1 | Browser to BFF (`CounterpartyRisk.Bff`) | F1, F2 | Session cookie `__Host-ccr` (opaque key, server-side ticket) | TLS, cookie flags, `X-CSRF` header, CSP, rate limiting, audit |
 | TB2 | BFF / browser / API to Keycloak | F3, F4, F5, F7 | OIDC Authorization Code + PKCE S256, confidential client `ccr-bff` | Exact redirect URIs, `state` / `nonce`, issuer and signature validation, MFA |
 | TB3 | BFF to API (`CounterpartyRisk.Api`) | F6 | JWT access token, audience `ccr-api`, added server-side by YARP | API not exposed outside the internal network, JWT revalidated, ABAC per request |
-| TB4 | API / BFF / workers / migrations to PostgreSQL | F8, F9, F10, F13, F14 | One database role per component | Least privilege roles, `FORCE` RLS, TLS `VerifyFull`, parameterised SQL |
+| TB4 | API / BFF / workers / migrations to PostgreSQL, and audit anchoring | F8, F9, F10, F13, F14, F19, F20 | One database role per component; write-only identity for the anchor store | Least privilege roles, `FORCE` RLS, TLS `VerifyFull`, parameterised SQL, separate key rings, external audit anchors |
 | TB5 | Workers to external open data sources | F11, F12 | Server certificate only (sources are anonymous) | HTTPS, host allowlist, no cross-domain redirect, size limits, integrity checks, safe parsing, quarantine |
 | TB6 | CI/CD (GitHub Actions) to repository, registries and artefacts | F16, F17, F18 | `GITHUB_TOKEN` with least permissions | Actions pinned by SHA, secret scanning, dependency and image scanning, SBOM, branch protection |
 | TB7 | Export file to the user workstation | F15 | None (the file leaves the system) | Formula neutralisation, row cap, export policy, audit with file hash, licence filtering |
 
 Database role names follow #11 and #10: `cr_owner` (NOLOGIN owner), `cr_migrator`, `cr_writer`,
-`cr_reader`, `cr_audit_writer`, `cr_audit_reader`. They implement the `app_api` (read) / `app_worker` (write)
+`cr_reader`, `cr_audit_writer`, `cr_audit_reader`, plus the key-ring roles `cr_bff_keys` and `cr_api_keys`. They implement the `app_api` (read) / `app_worker` (write)
 split described in the issue.
 
 ## Flows
@@ -98,7 +104,7 @@ split described in the issue.
 | F7 | API | Keycloak | Public signing keys, metadata (C0) | HTTPS | TB2 |
 | F8 | API | PostgreSQL | Read models, portfolio and results (C1), RLS scope | PostgreSQL protocol over TLS | TB4 |
 | F9 | API | PostgreSQL | Audit events (C1-PD) | PostgreSQL over TLS | TB4 |
-| F10 | BFF | PostgreSQL | Authentication tickets with tokens, Data Protection key ring (C2, encrypted) | PostgreSQL over TLS | TB4 |
+| F10 | BFF | PostgreSQL | Authentication tickets with tokens, BFF Data Protection key ring `dpkeys.bff_key` (C2, encrypted), role `cr_bff_keys` | PostgreSQL over TLS | TB4 |
 | F11 | Workers | External sources | Open data files and SDMX responses (C0, some non-redistributable) | HTTPS GET | TB5 |
 | F12 | Workers | Quarantine | Raw downloaded files (C0, untrusted) | Local file system | inside Z3 |
 | F13 | Workers | PostgreSQL | Reference data, market data, synthetic portfolio, results (C0, C1) | PostgreSQL over TLS | TB4 |
@@ -107,6 +113,8 @@ split described in the issue.
 | F16 | GitHub Actions | Artefacts | Binaries, images, SBOM, scan reports | HTTPS | TB6 |
 | F17 | Registries | GitHub Actions | Third-party packages, actions, base images (untrusted until scanned) | HTTPS | TB6 |
 | F18 | Artefacts | Runtime | Signed images and bundles | HTTPS | TB6 |
+| F19 | API | PostgreSQL | API Data Protection key ring `dpkeys.api_key` for cursor protection (C2, encrypted), role `cr_api_keys` | PostgreSQL over TLS | TB4 |
+| F20 | Audit verification job | Anchor store | Chain head (`seq`, HMAC, timestamp), hourly (C1) | HTTPS, append-only write | TB4 |
 
 ## Rules for evolving this diagram
 

@@ -48,8 +48,10 @@ versioned fixtures and from any public screenshot.
 | `reporting` | Read models per widget | C1 | RLS / views in `security_invoker` |
 | `meta` | Data sources and licences, ingestion runs, method versions, DQ results, events | C0 / C1 | No row content in ingestion logs |
 | `staging` | Unlogged load tables | Same class as the source | Truncated after each run |
-| `audit` | Audit events | C1-PD | INSERT-only, hash chain, monthly partitions, 5-year retention |
-| BFF ticket store, Data Protection key ring | Authentication tickets with tokens, keys | C2 | Encrypted, BFF role only |
+| `audit` | Audit events | C1-PD | INSERT-only, HMAC chain (key outside PostgreSQL), head anchored externally, monthly partitions, 5-year retention |
+| BFF ticket store, `dpkeys.bff_key` | Authentication tickets with tokens, BFF Data Protection keys | C2 | Encrypted, BFF roles only (`cr_bff_keys`) |
+| `dpkeys.api_key` | API Data Protection keys (cursor protection) | C2 | Encrypted, API key role only (`cr_api_keys`); not readable by `cr_reader` or any other role |
+| Audit anchor store (outside PostgreSQL) | Periodic chain heads (`seq`, HMAC, timestamp) | C1 | Separate trust domain, append-only with retention lock, write-only identity for the verification job |
 | Keycloak database | Accounts, credentials (hashed), sessions, events | C1-PD / C2 | Managed by Keycloak only |
 | Quarantine directory | Raw downloaded files | C0, untrusted | Outside any served path, deleted after processing |
 
@@ -71,11 +73,13 @@ Technical requirements per source are in [external-sources.md](external-sources.
 
 | Key / secret | Purpose | Algorithm | Storage | Rotation | Owner |
 | --- | --- | --- | --- | --- | --- |
-| Keycloak realm signing keys | Sign ID / access / logout tokens | RSA-PSS **PS256**, 3072 bits (or ES256) | Keycloak database | Yearly, with overlap (old key kept for validation until tokens expire) | #9 |
+| Keycloak realm signing keys | Sign ID / access / logout tokens | RSA-PSS **PS256**, 3072 bits, single algorithm (identical to the API allowlist, SEC-110 / TM-TB2-03); any change is made on both sides in the same release | Keycloak database | Yearly, with overlap (old key kept for validation until tokens expire) | #9 |
 | `ccr-bff` client credential | Authenticate the BFF to Keycloak | Client secret (`private_key_jwt` recommended later) | Vault / Aspire secret parameter | 90 days and on suspicion | #9 |
-| Data Protection key ring (BFF, API) | Protect cookies, tickets, pagination cursors | AES-256-GCM | PostgreSQL, encrypted at rest | 90 days (framework default), automatic | #9, #31 |
+| BFF Data Protection key ring | Protect the session cookie and authentication tickets | AES-256-GCM, application name `ccr-bff` | PostgreSQL table `dpkeys.bff_key`, read / insert only by role `cr_bff_keys`; keys encrypted at rest with a key-encryption key from the vault | 90 days (framework default), automatic | #9 |
+| API Data Protection key ring | Protect pagination cursors (TM-TB3-05) | AES-256-GCM, application name `ccr-api`, purpose `cursor` | PostgreSQL table `dpkeys.api_key`, read / insert only by role `cr_api_keys` (distinct from `cr_reader`); keys encrypted at rest with a separate key-encryption key from the vault | 90 days, automatic | #31 |
 | Audit IP HMAC key | Pseudonymise client IPs | HMAC-SHA-256, 256-bit key | Vault | Yearly; key id stored with each event | #10 |
-| Audit hash chain | Tamper evidence | SHA-256 | n/a (no key) | Algorithm id stored for agility | #10 |
+| Audit chain key | Keyed tamper evidence of `audit.audit_event`: `hash = HMAC-SHA-256(key, prev_hash ‖ canonical row)` | HMAC-SHA-256, 256-bit key, distinct from the IP HMAC key | Vault, **outside PostgreSQL**; readable by the audit writer and the verification job only, never by a database role | Yearly; key id stored with each event, old keys kept read-only for verification | #10 |
+| Audit chain anchors | Publish the chain head (`seq`, HMAC, timestamp) every hour and at each partition close | n/a (signed by the verification job identity) | Append-only external store in a separate trust domain (immutable / WORM object storage with retention lock or an external log service), write-only identity for the job | Retained 5 years like the audit trail | #10, #41 |
 | File integrity hashes | Ingestion integrity | SHA-256 | `meta.ingestion_run` | n/a | #15-#17 |
 | Database credentials | Service accounts `cr_*` | Password locally; managed identity or vault-rotated credentials elsewhere | User-secrets / vault | 90 days (static), per lease (dynamic) | #10, #11 |
 | TLS certificates | BFF, Keycloak, PostgreSQL, internal services | ECDSA P-256 or RSA 3072+ | Platform certificate store | Before expiry, automated | #41 |

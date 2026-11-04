@@ -295,10 +295,10 @@ Each item points to the full rows below.
 | SEC-142 | 11.1.2 | 2 | Cryptographic inventory | Yes | Same inventory, updated by every PR that adds a key or an algorithm | Review | #4, #41 |
 | SEC-143 | 11.2.1 | 2 | Industry-validated crypto implementations | Yes | .NET / OS crypto providers, Keycloak, PostgreSQL TLS; no custom crypto | Review | #7 |
 | SEC-144 | 11.2.2 | 2 | Crypto agility | Yes | Algorithms configurable (Data Protection, Keycloak keys); algorithm id stored with audit hashes | Review | #9, #10 |
-| SEC-145 | 11.2.3 | 2 | Minimum 128-bit security | Yes | Realm signing keys RSA 3072 bits (PS256) or P-256; AES-256 | Realm test | #9 |
+| SEC-145 | 11.2.3 | 2 | Minimum 128-bit security | Yes | Realm signing keys RSA 3072 bits, PS256 only (same algorithm as the API allowlist); AES-256 | Realm test | #9 |
 | SEC-146 | 11.3.1 | 1 | No ECB or weak padding | Yes | No ECB; RSASSA-PKCS1-v1_5 (RS256) not used | Review | #9 |
 | SEC-147 | 11.3.2 | 1 | Approved ciphers and modes (e.g. AES-GCM) | Yes | Data Protection configured with AES-256-GCM; TLS AEAD suites | Review | #9, #10 |
-| SEC-148 | 11.3.3 | 2 | Authenticated encryption | Yes | AES-GCM (Data Protection), protected cursors | Review | #9, #31 |
+| SEC-148 | 11.3.3 | 2 | Authenticated encryption | Yes | AES-GCM (Data Protection): BFF key ring for tickets, separate API key ring for cursors | Review | #9, #31 |
 | SEC-149 | 11.4.1 | 1 | Approved hash functions only | Yes | SHA-256 / HMAC-SHA-256; MD5 / SHA-1 forbidden (analyzers CA5350 / CA5351) | Analyzers (#8) | #7, #8 |
 | SEC-150 | 11.4.2 | 2 | Passwords stored with an approved KDF | Yes | Keycloak password hashing (Argon2 or PBKDF2-SHA512 with current iterations) | Realm test | #9 |
 | SEC-151 | 11.4.3 | 2 | Collision-resistant hashes >= 256 bits for integrity | Yes | SHA-256 for files and the audit chain | Unit tests | #10, #15 |
@@ -385,7 +385,7 @@ Each item points to the full rows below.
 | SEC-205 | 16.3.3 | 2 | Security events and bypass attempts logged | Yes | Validation failures, 429, CSRF rejections, CSP reports | Integration test | #10 |
 | SEC-206 | 16.3.4 | 2 | Unexpected errors and security control failures logged | Yes | Unhandled exceptions, TLS failures to sources or DB | Review | #7, #10 |
 | SEC-207 | 16.4.1 | 2 | Log injection prevented | Yes | Structured logging; CR / LF neutralised in values | Unit test | #7, #10 |
-| SEC-208 | 16.4.2 | 2 | Logs protected from unauthorized access and modification | Yes | Audit append-only + hash chain; collector with RBAC | Test `Should_Detect_Broken_Audit_Chain_At_Exact_Sequence` | #10 |
+| SEC-208 | 16.4.2 | 2 | Logs protected from unauthorized access and modification | Yes | Audit append-only + HMAC chain keyed outside PostgreSQL + hourly chain-head anchors in an external append-only store; collector with RBAC | Tests `Should_Detect_Broken_Audit_Chain_At_Exact_Sequence`, `Should_Detect_Recomputed_Chain_Against_External_Anchor` | #10 |
 | SEC-209 | 16.4.3 | 2 | Logs shipped to a separate system | Yes | OTLP collector separate from the application (local: Aspire dashboard) | Review | #10, #41 |
 | SEC-210 | 16.5.1 | 2 | Generic error messages | Yes | `ProblemDetails` (RFC 9457) without stack trace outside `Development` | Test `Should_Return_Generic_ProblemDetails_Without_StackTrace` | #7, #10 |
 | SEC-211 | 16.5.2 | 2 | Secure operation when external resources fail | Yes | Circuit breaker, last valid data kept with DQ status, last published as-of served | Integration test (#16) | #16, #19 |
