@@ -107,7 +107,7 @@ Each item points to the full rows below.
 | SEC-018 | 2.2.1 | 1 | Positive validation of all input | Yes | Allowlisted axes and values, enums, ranges; unknown values -> 400 | Test `Should_Return400_When_Axis_Value_Is_Unknown` | #31 |
 | SEC-019 | 2.2.2 | 1 | Validation enforced at a trusted service layer | Yes | `ValidationFilter` and handlers in the API; front-end validation is UX only | Integration tests (#31) | #31 |
 | SEC-020 | 2.2.3 | 2 | Combinations of related data items are reasonable | Yes | E.g. `compareTo` before `asOf`, aggregation guard between CCR and financing natures (400) | Integration tests | #31, #45 |
-| SEC-021 | 2.3.1 | 1 | Business flows processed in order, no skipped steps | Yes | The only multi-step flow is the OIDC login (state, nonce, PKCE); threshold changes are single-step commands | Test `Should_Reject_Callback_With_Invalid_State` | #9, #27 |
+| SEC-021 | 2.3.1 | 1 | Business flows processed in order, no skipped steps | Yes | OIDC login (state, nonce, PKCE); limit changes follow maker -> checker: a pending change is applied only after approval by another `sub` and never feeds W4 before (rule R4) | Tests `Should_Reject_Callback_With_Invalid_State`, `Should_Return403_When_Maker_Approves_Own_Limit_Change`, `Should_Not_Use_Pending_Limit_Change_In_W4_Utilisation` | #9, #27 |
 | SEC-022 | 2.3.2 | 2 | Business limits implemented as documented | Yes | Same limits as 2.1.3, read from validated options | Tests 429 / 413 (#10, #31) | #10, #31 |
 | SEC-023 | 2.3.3 | 2 | Business operations are transactional | Yes | Atomic as-of publication (`published_run_id` swap), ingestion in transactions, audit in the same transaction as sensitive actions | Integration tests | #10, #15, #31 |
 | SEC-024 | 2.3.4 | 2 | Locking for limited resources | Yes | One concurrent export per user, `[DisallowConcurrentExecution]` jobs, advisory lock for the audit chain | Integration tests | #10, #19, #31 |
@@ -233,11 +233,11 @@ Each item points to the full rows below.
 
 | SEC | ASVS | L | Requirement (summary) | Applicable | Comment | Evidence (test, tool, review) | Ticket |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| SEC-102 | 8.1.1 | 1 | Document function- and data-level authorization rules | Yes | Authorization matrix in [threat-model.md](threat-model.md) section 7, `Policies` class | Review | #9 |
-| SEC-103 | 8.1.2 | 2 | Document field-level authorization rules | Yes | Business-line restricted users see allocated measures only; no internal fields | Review | #9, #31 |
-| SEC-104 | 8.2.1 | 1 | Function-level access restricted | Yes | Capability policies, `FallbackPolicy` | Tests `Should_Return403_When_FrontOffice_Calls_Capital_Endpoint`, `Every_Endpoint_Should_Have_A_Named_Policy` | #9, #31 |
+| SEC-102 | 8.1.1 | 1 | Document function- and data-level authorization rules | Yes | Authorization matrix, incompatible role pairs and default data scopes in [threat-model.md](threat-model.md) section 7 (validated by the Expert CCR, PR #48), `Policies` class | Review; business review on any change | #9 |
+| SEC-103 | 8.1.2 | 2 | Document field-level authorization rules | Yes | Rules R1-R7 (threat model 7.2): capital tiles of W1 and the W10 large-exposure ratio need `ReadCapital`, W12 series inherit the indicator capability, allocated measures for business-line scopes; no internal fields | Review | #9, #31 |
+| SEC-104 | 8.2.1 | 1 | Function-level access restricted | Yes | Capability policies (`ReadExposure`, `ReadLimits`, `ReadCva`, `ReadRiskOversight`, `ReadCapital`, `ReadMarketAndBenchmark`, `Export` + widget read capability, `ManageLimitThresholds`, `ManageLimits`, `ApproveLimitChange`, `ReadAudit`), `FallbackPolicy` | Tests `Should_Return403_When_FrontOffice_Calls_Capital_Endpoint`, `Should_Return403_When_FrontOffice_Calls_ManageLimits`, `Should_Return403_When_Exporting_W6_Without_ReadCapital`, `Every_Endpoint_Should_Have_A_Named_Policy` | #9, #27, #31 |
 | SEC-105 | 8.2.2 | 1 | Data-level access restricted (IDOR / BOLA) | Yes | `AuthorizationBehavior` + RLS | Tests `Should_Return403_When_User_Requests_Other_LegalEntity`, `Should_Return404_When_NettingSet_Is_Out_Of_Scope` | #9, #11, #31 |
-| SEC-106 | 8.2.3 | 2 | Field-level access restricted (BOPLA) | Yes | Dedicated DTOs per endpoint | Contract test (oasdiff) | #31 |
+| SEC-106 | 8.2.3 | 2 | Field-level access restricted (BOPLA) | Yes | Dedicated DTOs per endpoint; fields governed by rules R1-R3 are not returned (not just hidden) without the capability | Tests `Should_Not_Return_Rwa_Tile_In_W1_For_FrontOffice`, `Should_Not_Return_LargeExposure_Ratio_Without_Full_Entity_Scope`; contract test | #31 |
 | SEC-107 | 8.3.1 | 1 | Authorization enforced at a trusted service layer | Yes | API handlers and PostgreSQL RLS; never in the SPA | Integration tests | #9, #11 |
 | SEC-108 | 8.4.1 | 2 | Cross-tenant isolation | Yes | Legal entities act as tenants: RLS `FORCE` + `WITH CHECK` | Tests `Should_Return_Zero_Rows_When_Scope_Is_Not_Set`, `All_Tables_With_LegalEntityId_Should_Have_Forced_Rls` | #11, #43 |
 
@@ -262,7 +262,7 @@ Each item points to the full rows below.
 | SEC-118 | 10.2.1 | 2 | CSRF protection of the code flow (PKCE or state) | Yes | PKCE S256 and `state` | Same test as 10.1.2 | #9 |
 | - | 10.2.2 | 2 | Mix-up attack defence with several authorization servers | No | Single authorization server | - | - |
 | SEC-119 | 10.3.1 | 2 | Resource server checks the audience | Yes | See 9.2.3 | Test `Should_Return401_When_Audience_Is_Not_CcrApi` | #9 |
-| SEC-120 | 10.3.2 | 2 | Authorization decisions based on token claims | Yes | Roles, `ccr_legal_entities`, `ccr_business_lines`, `sub` build `UserScope` | Integration tests | #9 |
+| SEC-120 | 10.3.2 | 2 | Authorization decisions based on token claims | Yes | Roles, `ccr_legal_entities`, `ccr_business_lines`, `sub` build `UserScope`; tokens carrying an incompatible role pair (threat model 7.3) are refused; front-office wildcard scope refused | Tests `Should_Return403_When_Token_Has_Incompatible_Roles`, `Should_Return403_When_FrontOffice_Scope_Is_Wildcard`, `Realm_Should_Not_Assign_Incompatible_Roles` | #9 |
 | SEC-121 | 10.3.3 | 2 | User identified by non-reassignable claims (iss + sub) | Yes | `iss` + `sub` used by audit and rate limiting | Review | #9, #10 |
 | SEC-122 | 10.3.4 | 2 | Resource server checks authentication strength | Yes | API requires the MFA `acr` level for `Export` and `ManageLimitThresholds` (same fallback as 6.8.4) | Integration test | #9 |
 | SEC-123 | 10.4.1 | 1 | Redirect URIs: exact match against an allowlist | Yes | Exact `redirectUris` and `post.logout.redirect.uris`, no wildcard | Realm test | #9 |
@@ -364,7 +364,7 @@ Each item points to the full rows below.
 | SEC-189 | 15.2.3 | 2 | No test code or extraneous functionality in production | Yes | No seed or test endpoints; generator runs as a job | Review | #7 |
 | SEC-190 | 15.3.1 | 1 | Return only required fields | Yes | DTOs per endpoint | Contract test | #31 |
 | SEC-191 | 15.3.2 | 2 | Do not follow redirects unless intended | Yes | `AllowAutoRedirect=false`, manual redirect revalidated | Test `Should_Reject_Redirect_To_Non_Allowlisted_Host` | #15, #16, #17 |
-| SEC-192 | 15.3.3 | 2 | Mass assignment protection | Yes | Dedicated command DTOs for write endpoints (thresholds) | Integration test (#27) | #27 |
+| SEC-192 | 15.3.3 | 2 | Mass assignment protection | Yes | Dedicated command DTOs for write endpoints (thresholds, limit change request, approval); status and checker never bound from the maker request | Integration test (#27) | #27 |
 | SEC-193 | 15.3.4 | 2 | Original client IP from trusted fields only | Yes | `ForwardedHeaders` with `KnownProxies` | Integration test (#10) | #10 |
 | SEC-194 | 15.3.5 | 2 | Strict typing and comparisons | Yes | C# nullable + strong types; TypeScript `strict`, `===` (lint) | Build / lint | #7, #12 |
 | SEC-195 | 15.3.6 | 2 | No prototype pollution | Yes | No deep merge of untrusted JSON into objects; `Map` / `Set`; lint | Review | #12 |
@@ -375,7 +375,7 @@ Each item points to the full rows below.
 | SEC | ASVS | L | Requirement (summary) | Applicable | Comment | Evidence (test, tool, review) | Ticket |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | SEC-197 | 16.1.1 | 2 | Logging inventory | Yes | Logging inventory in [data-classification.md](data-classification.md) | Review | #10, #41 |
-| SEC-198 | 16.2.1 | 2 | Log metadata: when, where, who, what | Yes | Timestamp, service, `sub`, action, `TraceId` | Unit test of the audit event | #10 |
+| SEC-198 | 16.2.1 | 2 | Log metadata: when, where, who, what | Yes | Timestamp, service, `sub`, action, `TraceId`; limit changes carry old value, new value, maker, checker | Unit test of the audit event | #10, #27 |
 | SEC-199 | 16.2.2 | 2 | Synchronised clocks, UTC timestamps | Yes | UTC (`timestamptz`, ISO 8601 with offset) | Review | #10 |
 | SEC-200 | 16.2.3 | 2 | Logs only to documented destinations | Yes | OpenTelemetry to the documented collector; audit to PostgreSQL | Review | #7, #10 |
 | SEC-201 | 16.2.4 | 2 | Logs in a common, correlatable format | Yes | Structured JSON / OTLP with `TraceId` | Review | #7 |

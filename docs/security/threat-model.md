@@ -96,6 +96,7 @@ flowchart LR
 | TM-TB2-06 | D | Forced logout of users with a forged back-channel logout token | Medium | Logout token validated: signature, issuer, audience, `typ=logout+jwt`, `events` claim, no `nonce` | SEC-138 | #9 | - |
 | TM-TB2-07 | E | Keycloak admin console reachable from the user network, default admin account | Medium | Admin console not exposed through the edge, bootstrap admin from a secret parameter, `ccr` realm has no admin users | SEC-072, SEC-165 | #9, #41 | - |
 | TM-TB2-08 | R | Login, failed login or logout cannot be traced | Medium | Keycloak user and admin events enabled; BFF audits login / logout | SEC-203 | #9, #10 | - |
+| TM-TB2-09 | E | Segregation of duties broken: one account cumulates incompatible roles (e.g. `ccr-limit-admin` + `ccr-front-office`, or `ccr-auditor` + a business role) | High | Incompatible role pairs (section 7.3) checked on the realm and on every access token (403); startup validation of the table | SEC-102, SEC-120 | #9 | `Realm_Should_Not_Assign_Incompatible_Roles`, `Should_Return403_When_Token_Has_Incompatible_Roles` |
 
 ### TB3 - BFF to API (flow F6)
 
@@ -103,7 +104,7 @@ flowchart LR
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | TM-TB3-01 | S | Direct call to the API that bypasses the BFF (no CSRF check, no session) | Medium | API has no public endpoint (internal network only) and revalidates every JWT; `FallbackPolicy` = authenticated user | SEC-107, SEC-109 | #7, #9 | - |
 | TM-TB3-02 | I | IDOR / BOLA: a user reads the figures of another legal entity (filter `legalEntities=<other LEI>` or a `publicId` of a foreign netting set) | High | `AuthorizationBehavior`: missing filter replaced by the user scope, out-of-scope filter -> 403, out-of-scope or unknown identifier -> identical 404; scope only from the token; PostgreSQL RLS as second layer | SEC-105, SEC-107, SEC-108, SEC-120 | #9, #11, #31 | `Should_Return403_When_User_Requests_Other_LegalEntity`, `Should_Return404_When_NettingSet_Is_Out_Of_Scope`, `Should_Return403_And_Issue_No_Sql_When_Scope_Is_Empty` |
-| TM-TB3-03 | E | BFLA: a front-office user calls capital (W5/W6) or export endpoints | High | Named capability policies on each endpoint group, deny by default, automated "every endpoint has a policy" test, authorization matrix (section 7) | SEC-102, SEC-104 | #9, #31 | `Should_Return403_When_FrontOffice_Calls_Capital_Endpoint`, `Every_Endpoint_Should_Have_A_Named_Policy` |
+| TM-TB3-03 | E | BFLA: a front-office user calls capital (W5/W6), oversight (W10/W11) or export endpoints, or reads a capital figure through an aggregate widget (RWA tile of W1, W12 series) | High | Named capability policies on each endpoint group, deny by default, automated "every endpoint has a policy" test, field-level rules R1 and R3 enforced by the API (fields not returned, not just hidden), authorization matrix (section 7) | SEC-102, SEC-103, SEC-104 | #9, #31 | `Should_Return403_When_FrontOffice_Calls_Capital_Endpoint`, `Should_Not_Return_Rwa_Tile_In_W1_For_FrontOffice`, `Should_Return403_When_W12_Series_Requires_Missing_Capability`, `Every_Endpoint_Should_Have_A_Named_Policy` |
 | TM-TB3-04 | E / T | SQL injection through a dynamic group-by axis or sort field turned into SQL | High | Axes and sort fields are enums mapped to columns, parameterised queries only, never concatenated SQL; CodeQL | SEC-006, SEC-018 | #31, #8 | `Should_Return400_When_Sort_Field_Is_Not_Allowlisted` |
 | TM-TB3-05 | T | Pagination cursor tampered with, replayed by another user, or reused after expiry | Medium | Cursor protected by a time-limited Data Protection protector containing last key, filter hash and `sub` | SEC-148 | #31 | - |
 | TM-TB3-06 | I | BOPLA: internal keys, `run_id`, `input_hash` or technical columns exposed | Medium | Dedicated DTOs, `public_id` UUIDv4 distinct from internal keys | SEC-106, SEC-190 | #31 | - |
@@ -111,7 +112,9 @@ flowchart LR
 | TM-TB3-08 | D | A query triggers a Monte-Carlo run or a history recomputation, exhausting the engine | High | No API endpoint triggers a simulation; computations run only as scheduled jobs; reads hit precomputed read models; `statement_timeout` | SEC-186, SEC-188 | #22, #26, #31, #39 | `Should_Abort_Query_When_Statement_Timeout_Is_Exceeded` |
 | TM-TB3-09 | I | Server cache returns figures computed for another scope | Medium | `HybridCache` key includes the hash of the effective scope, filters and `published_run_id` | SEC-178 | #31 | - |
 | TM-TB3-10 | S / E | Client-supplied `Authorization`, `X-Forwarded-*` or `X-User-*` header passed through the proxy | Medium | YARP transform removes `Cookie` and any client `Authorization`, then adds the server-side token | SEC-046 | #9 | `Should_Strip_Client_Authorization_Header_Before_Proxying` |
-| TM-TB3-11 | T | Misleading figures: economic and regulatory measures mixed, benchmark presented as recomputed value | Medium | `meta.exposureLevel`, `meta.measureKind`, `lineage` mandatory in every response; benchmarks served by distinct endpoints | SEC-020 | #5, #31 | - |
+| TM-TB3-11 | T | Misleading figures: economic and regulatory measures mixed, benchmark presented as recomputed value | Medium | `meta.exposureLevel`, `meta.measureKind`, `lineage` mandatory in every response; benchmarks served by distinct endpoints under `ReadMarketAndBenchmark`, with attribution (rule R6) | SEC-020, SEC-102 | #5, #31 | `Benchmark_Response_Should_Carry_Attribution_And_Separate_Series` |
+| TM-TB3-12 | I | Large-exposure ratio (exposure / Tier 1) of W10 returned to a user without `ReadCapital`, or computed on a business-line subset (capital leak and misleading ratio) | High | Rule R2: row returned only with `ReadCapital` and a scope covering all business lines of the legal entity; never allocated to a business line | SEC-103, SEC-105 | #9, #30, #31 | `Should_Not_Return_LargeExposure_Ratio_Without_Full_Entity_Scope` |
+| TM-TB3-13 | E / T / R | Limit amount changed without independent approval: maker approves its own change, front office modifies a limit it consumes, a pending change already feeds W4, change cannot be traced | High | `ManageLimits` (limit-admin) and `ApproveLimitChange` (direction) separated; maker != checker on `sub`; pending changes excluded from W4 utilisation; audit of old value, new value, maker, checker, timestamp (rule R4) | SEC-021, SEC-104, SEC-192, SEC-198 | #10, #27, #31 | `Should_Return403_When_Maker_Approves_Own_Limit_Change`, `Should_Return403_When_FrontOffice_Calls_ManageLimits`, `Should_Not_Use_Pending_Limit_Change_In_W4_Utilisation` |
 
 ### TB4 - API, BFF, workers and migrations to PostgreSQL (flows F8, F9, F10, F13, F14)
 
@@ -159,8 +162,8 @@ flowchart LR
 | Id | STRIDE | Threat (concrete example) | Sev. | Mitigation | Requirements | Ticket | Abuse-case test |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | TM-TB7-01 | T / E | CSV / Excel formula injection: a cell `=HYPERLINK("http://<attacker>","clic")` executed when opened | High | Text cells starting with `=` `+` `-` `@` tab or CR (and full-width variants) prefixed with `'`; numbers written as numbers; XLSX typed cells, never formula cells, no macros, no hyperlinks | SEC-009 | #31 | `Should_Escape_Formula_In_Csv_Export`, `Should_Write_Xlsx_Cells_Without_Formula` |
-| TM-TB7-02 | I | Mass exfiltration of the portfolio through exports | High | `Export` policy, same ABAC as the screen, 100 000-row cap (413 above), `export` rate limit, one concurrent export, synchronous audit with file hash | SEC-025, SEC-104, SEC-198 | #10, #31 | `Should_Return413_When_Export_Exceeds_Row_Cap`, `Should_Return403_When_FrontOffice_Exports` |
-| TM-TB7-03 | I | Non-redistributable data (DTCC, CCP) included in an export | Medium | Licence flag checked by the export pipeline; such series are excluded | - | #17, #31 | `Export_Should_Exclude_NonRedistributable_Sources` |
+| TM-TB7-02 | I | Mass exfiltration of the portfolio through exports, or export of a widget the user cannot read (e.g. W6 without `ReadCapital`) | High | `Export` policy AND read capability of the exported widget (rule R5), same ABAC as the screen, 100 000-row cap (413 above), `export` rate limit, one concurrent export, synchronous audit with file hash | SEC-025, SEC-104, SEC-198 | #10, #31 | `Should_Return413_When_Export_Exceeds_Row_Cap`, `Should_Return403_When_FrontOffice_Exports`, `Should_Return403_When_Exporting_W6_Without_ReadCapital` |
+| TM-TB7-03 | I | Non-redistributable data (DTCC, CCP) included in an export | Medium | Licence flag checked by the export pipeline; NR series displayed for consultation only with a "not redistributable" mention and excluded from every export (rule R5) | - | #17, #31 | `Export_Should_Exclude_NonRedistributable_Sources` |
 | TM-TB7-04 | T | Response header injection through the file name | Low | File name built server-side, ASCII only, `Content-Disposition: attachment` | SEC-054, SEC-055 | #31 | - |
 | TM-TB7-05 | R | An altered export is presented as an official extract | Low | SHA-256 of the file stored in the audit; footer with as-of date, exposure level, sources and "synthetic data" mention | SEC-198 | #10, #31 | - |
 
@@ -179,30 +182,81 @@ flowchart LR
 | --- | --- | --- |
 | Browser / Angular SPA | TM-TB1-03, TM-TB1-04, TM-TB1-05 | No token, CSP + Trusted Types, safe rendering, no sensitive storage (#12, #13, #14) |
 | BFF | TM-TB1-01, -02, -06, -07, -08, -09, TM-TB2-01, -06, TM-TB3-10 | Cookie session, OIDC client, CSRF header, YARP header hygiene, rate limiting, headers (#9, #10) |
-| Keycloak | TM-TB2-02, -04, -05, -07, -08 | Realm as code, MFA, brute force detection, password policy, events (#9) |
-| API | TM-TB2-03, TM-TB3-01..09, TM-TB7-01..05 | JWT validation, ABAC, allowlisted filters, DTOs, audit, export pipeline (#9, #10, #31) |
+| Keycloak | TM-TB2-02, -04, -05, -07, -08, -09 | Realm as code, MFA, brute force detection, password policy, events (#9) |
+| API | TM-TB2-03, TM-TB2-09, TM-TB3-01..13, TM-TB7-01..05 | JWT validation, ABAC, allowlisted filters, DTOs, audit, export pipeline (#9, #10, #31) |
 | Workers | TM-TB5-01..11, TM-INT-01, -02 | Safe ingestion, quarantine, integrity checks, bounded jobs (#15-#19, #22, #26) |
 | PostgreSQL | TM-TB4-01..09 | RLS, roles, TLS, audit schema, partitions (#10, #11, #43) |
 | CI/CD | TM-TB6-01..06 | Pinned actions, scans, SBOM, branch protection (#3, #8) |
 
-Count: **64 threats** (TB1: 10, TB2: 8, TB3: 11, TB4: 9, TB5: 11, TB6: 6, TB7: 5, internal: 4), of which
-**28 High**, each with a named abuse-case test.
+Count: **67 threats** (TB1: 10, TB2: 9, TB3: 13, TB4: 9, TB5: 11, TB6: 6, TB7: 5, internal: 4), of which
+**31 High**, each with a named abuse-case test.
 
 ## 7. Authorization matrix (input to #9 and #31)
 
-Default capabilities until the Expert CCR validates the role x widget matrix (#6). The matrix is coded in one
-tested `Policies` class (#9). Data scope (legal entities, business lines) applies on top of every capability.
+Validated by the Expert CCR in the review of PR #48; any change requires a new business review.
+The matrix is coded in one tested `Policies` class (#9) and enforced by the API (#31). Data scope (legal
+entities, business lines) applies on top of every capability; an empty scope returns 403.
+
+### 7.1 Capabilities per role
 
 | Capability (policy) | Widgets / endpoints | risk-manager | front-office | direction | finance | limit-admin | auditor |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `ReadExposure` | W1-W4, W7-W12, drill-down | Yes | Yes | Yes | Yes | No | No |
-| `ReadCapital` | W5 (EAD), W6 (RWA, capital, output floor) | Yes | **No** | Yes | Yes | No | No |
-| `Export` | `/widgets/*/export` | Yes | **No** | Yes | Yes | No | No |
+| `ReadExposure` | W1 (base), W2, W3, W8, W9, drill-down | Yes | Yes | Yes | Yes | No | No |
+| `ReadLimits` | W4 (utilisation, headroom, breaches; limit register and change history) | Yes | Yes | Yes | Yes | **Yes** | No |
+| `ReadCva` | W7 (CVA / XVA; the CVA RWA stays in W6) | Yes | Yes | Yes | Yes | No | No |
+| `ReadRiskOversight` | W10 (concentration, large exposures), W11 (stress, WWR) | Yes | **No** | Yes | Yes | No | No |
+| `ReadCapital` | W5 (EAD), W6 (RWA, capital, output floor), capital fields of W1 and W10 | Yes | **No** | Yes | Yes | No | No |
+| `ReadMarketAndBenchmark` | Market data and benchmark endpoints (ECB, BIS, EBA, FR Y-9C), C0 | Yes | Yes | Yes | Yes | No | No |
+| `Export` | `/widgets/*/export` (see rule R5) | Yes | **No** | Yes | Yes | No | No |
 | `ManageLimitThresholds` | Limit alert thresholds (#27) | No | No | No | No | Yes | No |
+| `ManageLimits` | Create or modify a limit amount (status *pending*) (#27) | No | No | No | No | **Yes** | No |
+| `ApproveLimitChange` | Approve or reject a pending limit change (#27) | No | No | **Yes** | No | No | No |
 | `ReadAudit` | Audit read endpoint (#10) | No | No | Yes | No | No | Yes |
 
-Field-level rules: a user scoped to a subset of business lines only sees allocated measures (#25), never the
-full netting set amount; internal identifiers and technical columns are never returned.
+### 7.2 Field-level and cross-widget rules
+
+| Id | Rule | Tests |
+| --- | --- | --- |
+| R1 | Every W1 tile sourced from W5 / W6 (RWA, EAD, capital) requires `ReadCapital`; without it the tile is not returned by the API (not just hidden in the UI). Other W1 tiles require the capability of their source widget. | `Should_Not_Return_Rwa_Tile_In_W1_For_FrontOffice` |
+| R2 | W10 large-exposure ratio (exposure / Tier 1) requires `ReadCapital` and a scope covering all business lines of the legal entity; otherwise the row is not returned. It is never allocated to a business line. | `Should_Not_Return_LargeExposure_Ratio_Without_Full_Entity_Scope` |
+| R3 | W12 series require the capability of the underlying indicator (e.g. an RWA series requires `ReadCapital`). | `Should_Return403_When_W12_Series_Requires_Missing_Capability` |
+| R4 | Maker != checker (`sub` differ); a pending change never feeds W4 utilisation; every change is audited with old value, new value, maker, checker and timestamp. | `Should_Return403_When_Maker_Approves_Own_Limit_Change`, `Should_Return403_When_FrontOffice_Calls_ManageLimits`, `Should_Not_Use_Pending_Limit_Change_In_W4_Utilisation` |
+| R5 | `Export` = `Export` AND the read capability of the exported widget (e.g. W5 / W6 export requires `ReadCapital`); same ABAC scope as the screen; NR series (DTCC, CCP disclosures) are displayed for consultation only with a "not redistributable" mention and excluded from every export (TM-TB7-03); C0 benchmarks are exported with source and licence. | `Should_Return403_When_Exporting_W6_Without_ReadCapital`, `Export_Should_Exclude_NonRedistributable_Sources` |
+| R6 | Market and benchmark views display their attribution (e.g. "Source: ECB statistics."); benchmarks are never on the same series as recomputed values. | `Benchmark_Response_Should_Carry_Attribution_And_Separate_Series` |
+| R7 | A user scoped to a subset of business lines only sees allocated measures (#25), never the full netting set amount; internal identifiers and technical columns are never returned. | `Should_Return_Allocated_Measure_For_BusinessLine_Scoped_User` |
+
+### 7.3 Incompatible role pairs (segregation of duties)
+
+Checked in the realm (test on `ccr-realm.json` and on the users created at startup) and on every access
+token by the API, which returns 403 when an incompatible pair is present. At startup the API validates
+that the incompatible-pairs table is loaded and non-empty, and refuses to start otherwise (fail closed).
+
+| Role | Incompatible with | Reason |
+| --- | --- | --- |
+| `ccr-limit-admin` | `ccr-front-office` | The front office never modifies a limit it consumes |
+| `ccr-limit-admin` | `ccr-risk-manager` | The limit administrator is distinct from the risk manager |
+| `ccr-auditor` | Any business role (`ccr-risk-manager`, `ccr-front-office`, `ccr-direction`, `ccr-finance`, `ccr-limit-admin`) | Independence of the audit function |
+
+Tests: `Realm_Should_Not_Assign_Incompatible_Roles`, `Should_Return403_When_Token_Has_Incompatible_Roles`.
+
+### 7.4 Default data scope
+
+| Role | Legal entities | Business lines |
+| --- | --- | --- |
+| risk-manager | Assigned legal entities | All business lines of those entities |
+| front-office | Own legal entity | Own business lines; scope mandatory, never "all" |
+| direction | All | All |
+| finance | Entities of its consolidation perimeter | **All** (required to reconcile COREP C 34 / Pillar 3 per entity) |
+| limit-admin | Entities whose limits it administers | n/a (limit register only, via `ReadLimits`) |
+| auditor | n/a (audit trail only) | n/a |
+
+An empty scope returns 403 (`Should_Return403_And_Issue_No_Sql_When_Scope_Is_Empty`). A front-office
+account with a wildcard (`*`) scope is rejected (`Should_Return403_When_FrontOffice_Scope_Is_Wildcard`).
+
+References: BCBS 239 principles 2 and 11, EBA/GL/2021/05 (internal governance, segregation of duties),
+CRR art. 287 / BCBS CRE53 (independent CCR control unit), BCBS *Principles for the Management of Credit Risk*
+principles 6 and 15. The split of capabilities, the refusal of exports to the front office, the default
+scopes and the choice of direction as limit approver are project assumptions.
 
 ## 8. Residual risks
 
