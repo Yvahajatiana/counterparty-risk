@@ -1,0 +1,20 @@
+#!/bin/sh
+# Local secret scan on staged changes. Enable once with: git config core.hooksPath .githooks
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks not found (install: winget install Gitleaks.Gitleaks). Commit blocked."
+  exit 1
+fi
+
+gitleaks git --staged --config .gitleaks.toml --redact --no-banner || {
+  echo "pre-commit: potential secret or sensitive data detected. Commit blocked."
+  exit 1
+}
+
+# Block private documents even if forced past .gitignore
+forbidden=$(git diff --cached --name-only --diff-filter=ACR | grep -Ei '(expression des besoins|\.pdf$|\.pfx$|\.p12$|\.pem$|\.key$|(^|/)\.env($|\.)|\.tfstate|\.dump$|\.bak$)' | grep -v '\.env\.example$')
+if [ -n "$forbidden" ]; then
+  echo "pre-commit: forbidden files staged:"
+  echo "$forbidden"
+  exit 1
+fi
