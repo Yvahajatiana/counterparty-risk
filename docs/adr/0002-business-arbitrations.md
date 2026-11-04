@@ -1,6 +1,6 @@
 # ADR-002 : Arbitrages métier du dashboard de risque de contrepartie
 
-- **Statut** : Accepté
+- **Statut** : **Accepté** (décisions métier, PO et Expert CCR, 2026-11-04). Références réglementaires **sous réserve** de la confrontation à EUR-Lex (section « Points à confronter à EUR-Lex »), à faire avant l'implémentation définitive des tickets concernés.
 - **Date** : 2026-11-04
 - **Décideurs** : Product Owner (sponsor métier), Expert CCR (validation métier), Lead (rédaction)
 - **Issue** : #6 ; spécification des financements : #45
@@ -21,8 +21,10 @@ Règles structurantes de l'EDB, que toutes les décisions respectent :
 - un seul quantile de PFE pour tout le dashboard ;
 - jamais de mesure économique (EE, EPE, PFE) et de mesure réglementaire (EAD, RWA) dans un même graphe ;
 - un niveau d'exposition explicite sur chaque montant ;
-- une règle d'allocation unique, stable et documentée ;
-- un historique recalculé à méthode constante, les changements de méthode étant seulement annotés.
+- PFE, EEPE et EAD sont non additives ; une règle d'allocation unique, stable et documentée s'applique sous le netting set ;
+- un historique recalculé à méthode constante, les changements de méthode étant seulement annotés ;
+- les benchmarks externes (BIS, EBA, FR Y-9C) sont affichés tels que publiés, jamais sur la même courbe que les séries recalculées ;
+- chaque valeur porte sa source, sa date d'arrêté et son statut (réel, transformé ou synthétique), selon les principes BCBS 239.
 
 ## Décision
 
@@ -42,13 +44,13 @@ Toute modification passe par une PR revue par le Lead et l'Expert CCR, crée une
 | Bloc | Mesures | Niveau | Base |
 | --- | --- | --- | --- |
 | CCR (dérivés OTC, ETD, SFT) | Notionnel brut Σ\|N_i\| (volume, pas une exposition) | `Notional` | [M] |
-| | Exposition brute avant CRM : dérivés Σ max(V_i, 0), SFT Σ E_i | `GrossPositiveMtm` | [M] |
-| | EAD CCR : dérivés en SA-CCR ; SFT en méthode générale fondée sur les sûretés financières (FCCM, art. 223), jamais en SA-CCR | `Ead` | [R] art. 271-274, 223 ; choix FCCM [H] (art. 111(6)) |
+| | Exposition brute avant CRM : dérivés Σ max(V_i, 0) (code de mesure `GrossPositiveMtm`) ; SFT Σ E_i, espèces ou titres remis avant collatéral reçu (code de mesure `GrossSftExposure`) | `GrossBeforeCrm` | [M] |
+| | EAD CCR : dérivés en SA-CCR ; SFT en méthode générale fondée sur les sûretés financières (FCCM, art. 223 ; art. 220 pour les netting sets sous accord-cadre, sous réserve de vérification), jamais en SA-CCR | `Ead` | [R] art. 271-274, 223, 220 ; choix FCCM [H] (art. 111(6)) |
 | Financement (prêts, lignes, engagements par signature) | Tiré = capital restant dû + intérêts courus (valeur comptable brute) | `Drawn` | [R] art. 110, 111(1) |
 | | Non tiré = max(limite engagée − Σ capital tiré, 0), **hors intérêts courus** ; 0 si la ligne est gelée ou annulée, ou si la période de disponibilité est échue | `Undrawn` | [R] art. 111(2), annexe I |
 | | Engagement total = tiré + non tiré | `TotalCommitment` | [M] |
-| | EAD hors bilan = CCF effectif × (non tiré − SCRA hors bilan) | `Ead` | [R] art. 111(2)-(3) |
-| | EAD financement = (tiré − SCRA bilan) + EAD hors bilan | `Ead` | [R] art. 111(1)-(2) |
+| | EAD hors bilan = CCF effectif × max(non tiré − SCRA hors bilan, 0) | `Ead` | [R] art. 111(2)-(3) |
+| | EAD financement = max(tiré − SCRA bilan, 0) + EAD hors bilan | `Ead` | [R] art. 111(1)-(2) |
 
 Règles de restitution [H] :
 
@@ -56,9 +58,17 @@ Règles de restitution [H] :
 - seuls l'**EAD** et la **valeur exposée grands risques** s'agrègent entre natures, toujours en barres empilées par nature avec le total ;
 - agrégats interdits : notionnel + engagement total, MtM brut + tiré, toute mesure économique (EE, EPE, PFE) avec une mesure de financement, IMM simulé avec une EAD réglementaire ;
 - l'EAD financement est additive par facilité et n'utilise pas Euler ;
+- W1 : la tuile « EAD totale » affiche la décomposition CCR / financement dans une seule tuile (toujours 5 tuiles au maximum, règle EDB) ; « RWA total CCR + CVA » ne change pas ;
 - en V1, les financements n'alimentent ni les limites (W4) ni les RWA (W6) ; une limite de crédit de groupe sur l'engagement total est envisagée en V2.
 
-Le niveau générique `GrossBeforeCrm` (le libellé `GrossPositiveMtm` s'applique mal aux SFT), soulevé dans #45, n'est pas tranché par cet ADR.
+**Niveau `GrossBeforeCrm` [H]** (question soulevée dans #45, tranchée ici) :
+
+- `ExposureLevel.GrossBeforeCrm` désigne l'étape « brut, avant netting et avant collatéral » de la chaîne de mitigation, première des étapes à afficher (brut → après netting → après collatéral → EAD). Un niveau décrit un stade de mitigation, pas un instrument.
+- `GrossPositiveMtm` n'est plus un niveau : c'est le **code de mesure** des dérivés (terme BIS « gross positive market value »).
+- Les SFT ont leur propre code de mesure, `GrossSftExposure` (Σ E_i), car un E_i n'est pas un MtM.
+- Libellé affiché : « Exposition brute avant CRM (avant netting et collatéral) ».
+- La première marche de la cascade W2 (#20) est au niveau `GrossBeforeCrm`, mesure `GrossPositiveMtm`. Le critère de #45 devient « 130, mesure `GrossPositiveMtm`, niveau `GrossBeforeCrm`, nature `Ccr` ».
+- Garde d'agrégation : `GrossBeforeCrm` ne s'agrège jamais avec `Drawn` (interdiction « MtM brut + tiré » inchangée).
 
 **Critères caducs de la proposition initiale** : « financement rejeté hors périmètre CCR » et « Gross Commitment seulement dans le glossaire ». Les financements sont routés vers le modèle de #43.
 
@@ -94,11 +104,11 @@ Le niveau générique `GrossBeforeCrm` (le libellé `GrossPositiveMtm` s'appliqu
 
 - **[R]** Aucune règle n'est imposée : l'EAD et l'EEPE sont définies au netting set (art. 272(4), 274, 284). **[M]** Euler est la seule allocation compatible avec la mesure de performance ajustée du risque (RORAC-compatible, Tasche) pour une mesure homogène de degré 1. Formulation corrigée : Euler n'est pas « la seule allocation additive », le pro rata l'étant aussi.
 - **[H] Homogénéité** : le collatéral est mis à l'échelle avec les transactions (traité comme une pseudo-position et alloué), pour que l'EAD SA-CCR soit homogène de degré 1. Le résidu se limite aux points de non-différentiabilité (RC = 0, plancher du multiplicateur), traités par dérivée à droite documentée.
-- **EE et CVA** : contribution exacte `E[V_i · 1{V − C > 0}]`, exactement additive ; la CVA, linéaire en EE, l'est aussi.
+- **EE et CVA** : contribution exacte `E[V_i · 1{V − C > 0}]` par transaction, et `−E[C · 1{V − C > 0}]` pour la pseudo-position de collatéral ; leur somme vaut `E[max(V − C, 0)]`, exactement additive. La CVA, linéaire en EE, l'est aussi.
 - **EEPE** : allocation via les contributions à l'EE aux dates où l'Effective EE est fixée (opérateur max), selon une règle documentée.
-- **PFE** : estimateur `E[V_i | V = PFE_q]` par noyau autour du quantile, largeur de fenêtre fixée dans la `MethodVersion`, graine identique à celle du run, erreur standard publiée.
+- **PFE** : la PFE est le quantile q de l'exposition **nette du collatéral** `E = max(V − C, 0)`. L'estimateur conditionne sur ce quantile, et non sur `V` brut : contribution de la transaction i = `E[V_i | V − C = PFE_q]`, contribution de la pseudo-position de collatéral = `−E[C | V − C = PFE_q]`, de sorte que la somme vaut `PFE_q` (lorsque `PFE_q > 0`). Le collatéral est donc alloué de façon cohérente avec sa mise à l'échelle (même pseudo-position que pour l'EAD et l'EE). Espérance conditionnelle estimée par noyau autour du quantile, largeur de fenêtre fixée dans la `MethodVersion`, graine identique à celle du run, erreur standard publiée.
 - **RWA** : contribution à l'EAD × pondération de la contrepartie.
-- **Invariant** : `Σ contributions + non alloué = total`. La ligne « non alloué » est visible. La méthode du plus grand reste ne sert qu'aux arrondis et ne masque jamais un résidu Euler.
+- **Invariant** : `Σ contributions + non alloué = total`. La ligne « non alloué » est toujours calculée. Elle est affichée dès que le résidu dépasse 0,1 % du total du netting set, seuil porté par la `MethodVersion` [H]. La méthode du plus grand reste ne sert qu'aux arrondis et ne masque jamais un résidu Euler.
 - Repli **pro rata** des montants stand-alone implémenté mais **inactif**.
 - Euler ne s'applique qu'au bloc CCR. Les widgets empilés (#25, #32 à #37) gèrent les valeurs négatives.
 
@@ -136,7 +146,7 @@ Le niveau générique `GrossBeforeCrm` (le libellé `GrossPositiveMtm` s'appliqu
 - Le scénario EBA est figé et non « le dernier » : l'exercice 2025 (scénario conçu par l'ESRB, horizon 2025-2027) reste la référence. L'intégration de l'exercice suivant passe par une nouvelle version du catalogue avec recalcul.
 - **[R] Références corrigées** : les art. 290 (stress tests) et 291 (WWR) relèvent de la Section 6 (IMM) et ne s'imposent qu'à un établissement IMM ; pour un établissement SA-CCR, l'exigence relève du Pilier 2. **[M]** Les « Guidelines for counterparty credit risk management » du BCBS (d588, finales le 11/12/2024) en font une bonne pratique.
 - **[R]** EEPE stressée : art. 284(3) et art. 292(2), second alinéa (et non art. 284(4), qui fixe α = 1,4).
-- **[H]** Hypothèses libellées comme telles : fenêtre de stress de l'EEPE 2007-2009 (ou équivalent), seuils de WWR (ρ > 0,3, ratio > 1,25).
+- **[H]** Hypothèses libellées comme telles : fenêtre de stress de l'EEPE 2007-2009 (ou équivalent), seuils de WWR (ρ > 0,3, ratio > 1,25). Les définitions de ρ (corrélation exposition / qualité de crédit) et du ratio figurent dans #28.
 - Les scénarios sont des fichiers de données validés par schéma (bornes sur les chocs), sans expression exécutable.
 
 ### 9. Devise de reporting
@@ -155,7 +165,7 @@ Le niveau générique `GrossBeforeCrm` (le libellé `GrossPositiveMtm` s'appliqu
 - La PFE de contrepartie ou de groupe s'obtient en sommant l'exposition **par chemin** sur les netting sets, puis en prenant le quantile ; jamais en sommant des quantiles.
 - Le quantile vient de la `MethodVersion` ; ce n'est pas un attribut de la limite.
 - **[M]** Une limite par tranche de maturité (profil de limite) est une évolution possible en V2.
-- Une limite PFE (économique) et un ratio de grands risques (réglementaire) ne figurent jamais dans le même graphe. W10 (Top N, HHI, répartitions) utilise une base unique choisie par l'utilisateur, jamais deux mesures dans un même graphe et jamais la PFE avec des financements.
+- Une limite PFE (économique) et un ratio de grands risques (réglementaire) ne figurent jamais dans le même graphe. W10 (Top N, HHI, répartitions) : une base unique au choix parmi l'EAD CCR, l'EAD totale (décomposée par nature), la valeur exposée grands risques, ou le pic de PFE (CCR seul, vision économique). Jamais deux mesures dans un même graphe, jamais la PFE avec des financements.
 
 ### 11. Grands risques
 
@@ -163,20 +173,21 @@ Le niveau générique `GrossBeforeCrm` (le libellé `GrossPositiveMtm` s'appliqu
 
 - **[R]** Limite de 25 % du Tier 1 après CRM (art. 395(1)), 15 % entre G-SII ; un grand risque commence à 10 % du Tier 1 (art. 392).
 - **[R] Correction** : la valeur exposée des dérivés suit l'**art. 390(4)** (Sections 3, 4 ou 5 du Chapitre 6 : SA-CCR, SA-CCR simplifiée, OEM). **Jamais l'IMM.** La référence à l'art. 429c (ratio de levier) est retirée.
-- **[R]** Financements : valeur exposée grands risques = hors bilan à **100 % du nominal**, sans CCF (art. 389), sauf exemptions : non tiré de catégorie 5 exempté (art. 400(1)(i)) ; discrétion de l'art. 400(2)(i) (50 % pour la catégorie 4 et la catégorie 3 d'échéance initiale ≤ 1 an) **prévue en paramètre, désactivée par défaut** [H]. Le projet suit le CRR et non LEX30. **[H]** Une offre non acceptée entre à 100 % du nominal, sauf exemption UCC (hypothèse prudente).
+- **[R]** Financements : valeur exposée grands risques calculée **après SCRA** = max(tiré − SCRA bilan, 0) + f_LE × max(non tiré − SCRA hors bilan, 0), avec le hors bilan à **100 % du nominal** (f_LE = 1), sans CCF (art. 389), sauf exemptions : non tiré de catégorie 5 exempté (art. 400(1)(i)) ; discrétion de l'art. 400(2)(i) (50 % pour la catégorie 4 et la catégorie 3 d'échéance initiale ≤ 1 an) **prévue en paramètre, désactivée par défaut** [H]. Le projet suit le CRR et non LEX30. **[H]** Une offre non acceptée entre à 100 % du nominal, sauf exemption UCC (hypothèse prudente).
 - **[R]** CRM selon les art. 399-403 ; expositions de transaction sur QCCP exemptées (art. 400(1)(j)).
 - W10 lit la **valeur exposée grands risques** (`LargeExposureValue`), jamais l'EAD de solvabilité ; décomposition par nature obligatoire.
 - **[H]** Le groupe de clients liés (art. 4(1)(39)) recouvre contrôle et interdépendance économique ; GLEIF ne couvre que le contrôle, limite signalée dans l'aide de W10. Le Tier 1 de la banque fictive est un paramètre synthétique versionné.
 
 ### 12. Output floor
 
-**Décision [R]** : calendrier de l'art. 465(1) en paramètres versionnés.
+**Décision [R]** : facteur x de 72,5 % (art. 92(3)) ; par dérogation, 50 / 55 / 60 / 65 / 70 % de 2025 à 2029 (art. 465(1)). En paramètres versionnés.
 
 | Année | 2025 | 2026 | 2027 | 2028 | 2029 | À partir de 2030 |
 | --- | --- | --- | --- | --- | --- | --- |
 | Facteur x | 50 % | 55 % | 60 % | 65 % | 70 % | 72,5 % |
+| Base | art. 465(1) | art. 465(1) | art. 465(1) | art. 465(1) | art. 465(1) | art. 92(3) |
 
-- Plafond transitoire de 125 % du U-TREA jusqu'au 31/12/2029 (art. 465(2)).
+- Plafond transitoire de 125 % du U-TREA jusqu'au 31/12/2029 : dérogation de l'art. 465(2), **activée par défaut** [H], paramètre `applied` dans le `RegulatoryParameterSet` (sur le modèle de l'art. 495d).
 - Transitoires du S-TREA (art. 465(3), (5), (9) et (13)) jusqu'à fin 2032.
 - Formulation corrigée : montée en charge jusqu'en 2030, dispositions transitoires jusqu'à fin 2032.
 - **Point de veille** : la communication de la Commission du 17/07/2026 sur la compétitivité bancaire annonce des propositions sur l'output floor et ses transitoires, attendues début 2027. Le calendrier en vigueur est inchangé, d'où un `RegulatoryParameterSet` versionné.
@@ -185,6 +196,8 @@ Le niveau générique `GrossBeforeCrm` (le libellé `GrossPositiveMtm` s'appliqu
 ### 13. Seuils d'alerte
 
 **Décision** : seuil d'**alerte** paramétrable, défaut **80 %** de la limite, contrainte 0 < alerte < 100 % [M pour le niveau, H pour la règle]. Le **dépassement** commence à **100 %** de la limite, fixe. `Dépassement = max(Exposition − Limite, 0)`. Un niveau d'escalade supérieur à 100 % peut s'ajouter sans redéfinir le dépassement. La borne « dépassement ≤ 150 % » de #27 est supprimée.
+
+Le même seuil d'alerte (défaut 80 %) s'applique au ratio grands risques rapporté à la limite de l'art. 395(1) : alerte à 20 % du Tier 1, dépassement à 25 %.
 
 ### 14. CCF et classement hors bilan des financements
 
@@ -199,7 +212,7 @@ Le niveau générique `GrossBeforeCrm` (le libellé `GrossPositiveMtm` s'appliqu
 | 5 | 10 % | Engagements révocables sans condition (UCC) |
 
 - **[R]** Art. 111(3) : un engagement sur un autre élément hors bilan prend le **plus bas** des deux CCF (résolution récursive, détection de cycle, profondeur ≤ 3 [H]).
-- **[R]** Art. 111(4) : une offre contractuelle non encore acceptée se traite comme un engagement ; statut `FacilityStatus.Offered`, catégorie du produit une fois accepté (C3 par défaut, C5 seulement si UCC sans facteur de contrainte). Le cas à 0 % de l'art. 5(10)(a)-(e) n'est pas généré en V1 [H].
+- **[R]** Art. 111(4) : une offre contractuelle non encore acceptée se traite comme un engagement ; statut `FacilityStatus.Offered`, catégorie du produit une fois accepté (C3 par défaut, C5 seulement si UCC sans facteur de contrainte). Une offre non acceptée prévoyant un montant à tirer obligatoirement reste en C3. Une fois acceptée, le montant qui doit être tiré passe en C1, le reste en C3 [R par anticipation, EBA/RTS/2025/06]. Les accords de principe ne sont pas modélisés [H]. Le cas à 0 % de l'art. 5(10)(a)-(e) n'est pas généré en V1 [H].
 - **Transitoire UCC (art. 495d)** : le CCF de 10 % est multiplié par un facteur.
 
   | Période | Facteur | CCF effectif UCC |
@@ -236,8 +249,9 @@ Le niveau générique `GrossBeforeCrm` (le libellé `GrossPositiveMtm` s'appliqu
 | Fenêtre EEPE stressée, seuils WWR | 2007-2009 ; ρ > 0,3, ratio > 1,25 | `StressScenarioSet` | [H] |
 | `ReportingCurrency` | EUR, taux ECB de la date d'arrêté | `RiskMethodologyOptions` | [H] |
 | `LimitAlertThresholds` | Alerte 80 % (0 < alerte < 100 %) ; dépassement fixe à 100 % | `RiskMethodologyOptions` | [M], [H] |
-| Calendrier output floor | 50 / 55 / 60 / 65 / 70 / 72,5 % (2025 à 2030+) | `RegulatoryParameterSet` | [R] |
-| Plafond output floor | 125 % du U-TREA jusqu'au 31/12/2029 | `RegulatoryParameterSet` | [R] |
+| Calendrier output floor | 50 / 55 / 60 / 65 / 70 % (2025 à 2029, art. 465(1)), puis 72,5 % (art. 92(3)) | `RegulatoryParameterSet` | [R] |
+| Plafond output floor | 125 % du U-TREA jusqu'au 31/12/2029, `applied = true` | `RegulatoryParameterSet` | [R], dérogation activée [H] |
+| Seuil d'affichage du « non alloué » (Euler) | 0,1 % du total du netting set | `MethodVersion` | [H] |
 | Seuils grands risques | 10 %, 25 % (15 % entre G-SII) du Tier 1 | `RegulatoryParameterSet` | [R] |
 | Tier 1 de la banque fictive | Valeur synthétique | `RegulatoryParameterSet` | [H] |
 | CCF par catégorie | 100 / 50 / 40 / 20 / 10 % | `credit-sa-ccf.crr3.v1.json` (`RegulatoryParameterSet`) | [R] |
@@ -263,8 +277,9 @@ Le niveau générique `GrossBeforeCrm` (le libellé `GrossPositiveMtm` s'appliqu
 
 **Impacts sur les tickets**
 
-- #5 : `RiskMethodologyOptions` ; `ExposureLevel` += `Drawn`, `Undrawn`, `TotalCommitment`, `LargeExposureValue` ; `ExposureNature` ; `RegulatoryApproach` += `SaCreditRisk`, `Fccm`.
-- #21 : SA-CCR seule approche réglementaire des dérivés ; EAD des SFT en FCCM (art. 223).
+- #5 : `RiskMethodologyOptions` ; `ExposureLevel` += `GrossBeforeCrm` (remplace l'usage de `GrossPositiveMtm` comme niveau), `Drawn`, `Undrawn`, `TotalCommitment`, `LargeExposureValue` ; codes de mesure `GrossPositiveMtm` (dérivés) et `GrossSftExposure` (SFT) ; `ExposureNature` ; `RegulatoryApproach` += `SaCreditRisk`, `Fccm`.
+- #20 : première marche de la cascade W2 au niveau `GrossBeforeCrm`, code de mesure `GrossPositiveMtm` ; libellé « Exposition brute avant CRM (avant netting et collatéral) ».
+- #21 : SA-CCR seule approche réglementaire des dérivés ; EAD des SFT en FCCM (art. 223 ; art. 220 pour les netting sets sous accord-cadre, sous réserve de vérification).
 - #22 : grille du §4, quantile validé contre la `MethodVersion`, EEPE stressée sous art. 284(3) et 292(2), PFE agrégée par chemin, libellé IMM simulé.
 - #23 : BA-CVA (M_NS corrigée, périmètre art. 382, CVA exemptée notionnelle), output floor du §12, section CCF du `RegulatoryParameterSet`.
 - #24 : CVA et DVA seulement, DVA comptable, contributions CVA additives, libellé PD proxy.
@@ -275,7 +290,15 @@ Le niveau générique `GrossBeforeCrm` (le libellé `GrossPositiveMtm` s'appliqu
 - #43, #44, #45 : financements du §1 et du §14.
 - #32 à #37 : textes d'aide (quantile, allocation, CCF, libellés obligatoires). #41 : section méthodologie.
 
-**Mises à jour de l'EDB à porter par le PO** (document local) : formulation de l'output floor dans W6, valeurs de l'axe « Approche réglementaire » (sans CEM ni IMM approuvée), points ouverts désormais actés.
+**Mises à jour de l'EDB à porter par le PO** (document local, non versionné ; liste sans extrait) :
+
+- W3 : quantile unique de 97,5 %, au lieu de la liste de trois quantiles ;
+- W5 et W11 : libellé « IMM simulé, non approuvé » sur l'EEPE ;
+- W6 : output floor, montée en charge jusqu'en 2030, dispositions transitoires jusqu'à fin 2032 ;
+- W10 : « valeur exposée grands risques » au lieu d'« exposition groupe » ;
+- W2 : niveau `GrossBeforeCrm` pour la première marche de la cascade ;
+- axe « Approche réglementaire » : SA-CCR, IMM simulé, SA crédit (art. 111), FCCM ; sans CEM ;
+- points ouverts restants (RCI, Bâle 1 / CEM, quantile, XVA, approche CVA, stress) à cocher, avec renvoi à l'ADR-002.
 
 ## Points à confronter à EUR-Lex
 
@@ -287,8 +310,9 @@ L'Expert CCR a relu les articles sur des sources secondaires (texte consolidé r
 - [ ] Art. 382, 382(2), (3), (4), (4b), 382a, 383, 384 (§2, §3), 385, 386, 162 : périmètre, approches et paramètres CVA, M_NS.
 - [ ] Art. 33(1)(c) : traitement de la DVA en CET1.
 - [ ] Art. 389, 390(4), 392, 395(1), 399-403, 400(1)(i), 400(1)(j), 400(2)(i), 4(1)(39) : grands risques (l'art. 395 a été relu sur le PRA Rulebook, texte britannique).
-- [ ] Art. 465(1), (2), (3), (5), (9), (13) : calendrier et transitoires de l'output floor.
+- [ ] Art. 92(3), 465(1), (2), (3), (5), (9), (13) : facteur permanent de 72,5 %, calendrier dérogatoire et transitoires de l'output floor ; nature (faculté ou non) de la dérogation de l'art. 465(2).
 - [ ] Art. 110, 111(1)-(4), 111(6), 111(8), 112, 5(10), 4(1)(80), annexe I (contenu des catégories 1 à 5), 223 : approche standard, CCF, définition des UCC et du financement du commerce, FCCM.
+- [ ] Art. 220 : FCCM pour les netting sets de SFT sous accord-cadre (GMRA).
 - [ ] Art. 495d, dont 495d(2) : calendrier transitoire des UCC et clause de revue.
 - [ ] Art. 166(8a)-(8c) : CCF en IRB (pour mémoire).
 - [ ] RTS EBA de l'art. 111(8) (EBA/RTS/2025/06) : publication au JOUE et écarts éventuels avec le projet final.
