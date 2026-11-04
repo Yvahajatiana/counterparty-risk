@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>CounterpartyRisk.SharedKernel</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Data classification attributes only (no runtime logging dependency) -->
+    <PackageReference Include="Microsoft.Extensions.Compliance.Abstractions" />
+  </ItemGroup>
+
+</Project>

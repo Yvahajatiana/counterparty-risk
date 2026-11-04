@@ -1,0 +1,47 @@
+name: .NET build & test
+
+# Minimal pipeline (#7). Enriched by #8: CodeQL, SBOM, coverage, dependency review.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dotnet-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: Build & test (.NET)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+      # Enables locked restore and deterministic CI build (Directory.Build.props)
+      CI: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET (global.json)
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      - name: Restore (locked mode, NuGet audit)
+        run: dotnet restore CounterpartyRisk.slnx
+
+      - name: Build (warnings as errors)
+        run: dotnet build CounterpartyRisk.slnx -c Release --no-restore
+
+      - name: Test (unit, architecture, smoke)
+        run: dotnet test --solution CounterpartyRisk.slnx -c Release --no-build

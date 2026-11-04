@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="NSubstitute" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CounterpartyRisk.SharedKernel\CounterpartyRisk.SharedKernel.csproj" />
+    <ProjectReference Include="..\..\src\CounterpartyRisk.SharedKernel.Application\CounterpartyRisk.SharedKernel.Application.csproj" />
+  </ItemGroup>
+
+</Project>

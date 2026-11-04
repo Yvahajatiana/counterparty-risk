@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <ItemGroup>
+    <ProjectReference Include="..\CounterpartyRisk.ServiceDefaults\CounterpartyRisk.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\CounterpartyRisk.SharedKernel.Application\CounterpartyRisk.SharedKernel.Application.csproj" />
+  </ItemGroup>
+
+</Project>

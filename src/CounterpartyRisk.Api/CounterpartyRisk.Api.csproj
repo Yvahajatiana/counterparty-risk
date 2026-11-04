@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CounterpartyRisk.IntegrationTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CounterpartyRisk.ServiceDefaults\CounterpartyRisk.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\CounterpartyRisk.SharedKernel.Application\CounterpartyRisk.SharedKernel.Application.csproj" />
+    <ProjectReference Include="..\Modules\ReferenceData\CounterpartyRisk.ReferenceData.Application\CounterpartyRisk.ReferenceData.Application.csproj" />
+    <ProjectReference Include="..\Modules\ReferenceData\CounterpartyRisk.ReferenceData.Infrastructure\CounterpartyRisk.ReferenceData.Infrastructure.csproj" />
+    <ProjectReference Include="..\Modules\MarketData\CounterpartyRisk.MarketData.Application\CounterpartyRisk.MarketData.Application.csproj" />
+    <ProjectReference Include="..\Modules\MarketData\CounterpartyRisk.MarketData.Infrastructure\CounterpartyRisk.MarketData.Infrastructure.csproj" />
+    <ProjectReference Include="..\Modules\Portfolio\CounterpartyRisk.Portfolio.Application\CounterpartyRisk.Portfolio.Application.csproj" />
+    <ProjectReference Include="..\Modules\Portfolio\CounterpartyRisk.Portfolio.Infrastructure\CounterpartyRisk.Portfolio.Infrastructure.csproj" />
+    <ProjectReference Include="..\Modules\RiskEngine\CounterpartyRisk.RiskEngine.Application\CounterpartyRisk.RiskEngine.Application.csproj" />
+    <ProjectReference Include="..\Modules\RiskEngine\CounterpartyRisk.RiskEngine.Infrastructure\CounterpartyRisk.RiskEngine.Infrastructure.csproj" />
+    <ProjectReference Include="..\Modules\Capital\CounterpartyRisk.Capital.Application\CounterpartyRisk.Capital.Application.csproj" />
+    <ProjectReference Include="..\Modules\Capital\CounterpartyRisk.Capital.Infrastructure\CounterpartyRisk.Capital.Infrastructure.csproj" />
+    <ProjectReference Include="..\Modules\Reporting\CounterpartyRisk.Reporting.Application\CounterpartyRisk.Reporting.Application.csproj" />
+    <ProjectReference Include="..\Modules\Reporting\CounterpartyRisk.Reporting.Infrastructure\CounterpartyRisk.Reporting.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,26 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.6.4">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- The AppHost is started with 'dotnet run'; the Aspire CLI bundle is optional -->
+    <NoWarn>$(NoWarn);ASPIRE010</NoWarn>
+    <!-- The Aspire SDK adds host-RID packages (DCP, dashboard): a lock file generated on Windows would
+         break locked restore on Linux CI. The AppHost is local orchestration only, never deployed. -->
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
+    <RestoreLockedMode>false</RestoreLockedMode>
+    <!-- Parameters:pg-password and Parameters:keycloak-admin-password live in user-secrets -->
+    <UserSecretsId>ea31249f-fcc2-447b-b946-28fe0e9e82f2</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.PostgreSQL" />
+    <PackageReference Include="Aspire.Hosting.Keycloak" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CounterpartyRisk.Api\CounterpartyRisk.Api.csproj" />
+    <ProjectReference Include="..\CounterpartyRisk.Bff\CounterpartyRisk.Bff.csproj" />
+    <ProjectReference Include="..\CounterpartyRisk.Workers\CounterpartyRisk.Workers.csproj" />
+  </ItemGroup>
+
+</Project>

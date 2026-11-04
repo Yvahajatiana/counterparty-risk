@@ -115,3 +115,10 @@ indent_size = 2
 
 [*.sql]
 indent_size = 4
+
+# ---------------------------------------------------------------------------
+# Tests (#7)
+# ---------------------------------------------------------------------------
+[tests/**.cs]
+# Test method names use underscores
+dotnet_diagnostic.CA1707.severity = none

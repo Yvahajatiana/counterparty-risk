@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Smoke tests run in-memory (no Docker). PostgreSQL tests with Testcontainers and the
+       shared PostgresFixture are added by #11. -->
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CounterpartyRisk.Api\CounterpartyRisk.Api.csproj" />
+  </ItemGroup>
+
+</Project>
