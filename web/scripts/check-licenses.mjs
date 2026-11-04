@@ -3,6 +3,7 @@
 // Exceptions must be justified in THIRD_PARTY_LICENSES.md and ADR-001 (#3).
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { isSpdxAllowed } from './spdx.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 
@@ -31,16 +32,7 @@ const EXCEPTIONS = new Map([
   ['highcharts', 'Highsoft proprietary license: free for non-commercial use only (ADR-001, #3)'],
 ]);
 
-/** Accepts SPDX expressions made only of allowed identifiers ("MIT OR Apache-2.0", "(MIT AND CC-BY-4.0)"). */
-function isAllowed(license) {
-  if (typeof license !== 'string' || license.length === 0) return false;
-  const ids = license
-    .replace(/[()]/g, ' ')
-    .split(/\s+(?:OR|AND)\s+|\s+/)
-    .filter(Boolean);
-  if (/\sOR\s/.test(license)) return ids.some((id) => ALLOWED.has(id));
-  return ids.every((id) => ALLOWED.has(id));
-}
+const ALLOWED_FOR_DEV = new Set([...ALLOWED, ...ALLOWED_DEV_ONLY]);
 
 const lock = JSON.parse(await readFile(resolve(ROOT, 'package-lock.json'), 'utf8'));
 const violations = [];
@@ -54,8 +46,8 @@ for (const [path, meta] of Object.entries(lock.packages ?? {})) {
     exceptionsUsed.push(`${name}@${meta.version} (${license ?? 'n/a'}): ${EXCEPTIONS.get(name)}`);
     continue;
   }
-  if (meta.dev && ALLOWED_DEV_ONLY.has(license)) continue;
-  if (!isAllowed(license)) {
+  // Full SPDX evaluation: OR needs one allowed branch, AND needs all of them (see spdx.mjs).
+  if (!isSpdxAllowed(license, meta.dev ? ALLOWED_FOR_DEV : ALLOWED)) {
     violations.push(`${name}@${meta.version}: ${license ?? 'UNKNOWN'}${meta.dev ? ' (dev)' : ''}`);
   }
 }

@@ -45,6 +45,9 @@ jobs:
       - name: Audit dependencies (blocking on high and critical)
         run: npm audit --audit-level=high
 
+      - name: Unit tests (CI scripts, node:test)
+        run: npm run test:scripts
+
       - name: Check licenses
         run: npm run check:licenses
 

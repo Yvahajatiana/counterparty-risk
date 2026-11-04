@@ -12,7 +12,8 @@
     "format:check": "prettier --check \"src/**/*.{ts,html,scss,css}\" \"scripts/**/*.mjs\" eslint.config.js",
     "check:contrast": "node scripts/check-contrast.mjs",
     "check:licenses": "node scripts/check-licenses.mjs",
-    "serve:csp": "node scripts/serve-csp.mjs"
+    "serve:csp": "node scripts/serve-csp.mjs",
+    "test:scripts": "node --test scripts/"
   },
   "private": true,
   "packageManager": "npm@11.4.2",
