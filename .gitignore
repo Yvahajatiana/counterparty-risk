@@ -487,6 +487,8 @@ $RECYCLE.BIN/
 
 # Requirements document (EDB) - kept local only
 *Expression des besoins*.md
+docs/edb.md
+edb*.md
 docs/private/
 private/
 

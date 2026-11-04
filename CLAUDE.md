@@ -2,7 +2,8 @@
 
 - Stack: .NET 10 back (Clean Architecture, DDD, CQRS), PostgreSQL + EF Core, Angular front with
   AG Grid Community (tables), Highcharts (charts), Angular Material + Tailwind, corporate style.
-- Team is fixed: Lead, Back-1, Back-2, Back-3, Front. See CONTRIBUTING.md for scopes and workflow.
+- Team is fixed: Expert CCR (business owner, `.claude/agents/expert-ccr.md`), Lead, Back-1, Back-2, Back-3, Front.
+- Any doubt on an indicator, formula, data mapping or widget goes to the `expert-ccr` agent. The local EDB lives in `docs/edb.md` (git-ignored, never commit it). See CONTRIBUTING.md for scopes and workflow.
 - Secure by Design is the top priority. Run `/security-review` before every PR.
 - PR review: comment `@claude review` on the PR (Claude GitHub App). No Anthropic API key in CI.
 - Never commit the EDB (`*Expression des besoins*.md`) or any PDF / secret. Hooks: `git config core.hooksPath .githooks`.

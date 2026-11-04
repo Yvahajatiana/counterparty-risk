@@ -5,6 +5,7 @@ The project is delivered by a fixed team of agents for its whole lifecycle:
 
 | Agent | Label | Scope |
 | --- | --- | --- |
+| Expert CCR (business owner) | `agent:expert-ccr` | Guardian of the requirements (EDB): challenges needs, validates indicators, formulas, data mappings, widgets; business review of risk computation code |
 | Lead | `agent:lead` | Architecture, ADRs, shared contracts, arbitration, final review, merges |
 | Back-1 | `agent:back-1` | Data: schema, ingestion (GLEIF, ECB, BIS, EBA, FR Y-9C, SDR), history |
 | Back-2 | `agent:back-2` | Risk engine: exposure cascade, SA-CCR, EE/PFE, CVA |
@@ -19,7 +20,8 @@ The project is delivered by a fixed team of agents for its whole lifecycle:
 4. Before opening the PR, run the official Anthropic security review locally in Claude Code:
    `/security-review`. Fix findings, paste the summary in the PR.
 5. Open the PR with the template, then comment `@claude review` (Claude GitHub App).
-6. The Lead reviews and merges. CI (secret scan, build, tests) must be green.
+6. Issues labelled `review:expert-ccr` also need the business validation of the Expert CCR agent (`.claude/agents/expert-ccr.md`), recorded as a PR comment.
+7. The Lead reviews and merges. CI (secret scan, build, tests) must be green.
 
 ## Rules
 - Secure by Design first: `priority:security-by-design` issues are done before feature work they gate.
