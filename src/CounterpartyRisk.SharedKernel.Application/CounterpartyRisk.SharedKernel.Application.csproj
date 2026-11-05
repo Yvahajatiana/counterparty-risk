@@ -12,6 +12,9 @@
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <!-- Brings the LoggerMessage generator that honours [PersonalData]/[SensitiveData]; the default one
+         logs them in clear text. PrivateAssets=none flows the analyzer to every project referencing this one. -->
+    <PackageReference Include="Microsoft.Extensions.Telemetry.Abstractions" PrivateAssets="none" />
   </ItemGroup>
 
   <ItemGroup>

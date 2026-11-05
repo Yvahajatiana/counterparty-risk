@@ -4,7 +4,7 @@ using CounterpartyRisk.SharedKernel.Results;
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 
 namespace CounterpartyRisk.SharedKernel.UnitTests.Messaging;
 
@@ -58,7 +58,7 @@ public class DispatcherTests
 
         await dispatcher.Send(new DoubleCommand(1), TestContext.Current.CancellationToken);
 
-        recorder.Calls.ShouldBe(["validator", "behavior:before", "handler", "behavior:after"]);
+        recorder.Calls.ShouldBe(["validator", "behavior:before", "handler:created", "handler", "behavior:after"]);
     }
 
     [Fact]
@@ -74,7 +74,62 @@ public class DispatcherTests
         result.IsFailure.ShouldBeTrue();
         var error = result.Error.ShouldBeOfType<ValidationError>();
         error.Errors.ShouldHaveSingleItem().Field.ShouldBe(nameof(DoubleCommand.Value));
-        recorder.Calls.ShouldNotContain("handler");
+        recorder.Calls.ShouldNotContain("handler:created");
+    }
+
+    [Fact]
+    public async Task Validation_error_does_not_echo_the_attempted_value()
+    {
+        using var provider = BuildProvider();
+        using var scope = provider.CreateScope();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<IDispatcher>();
+
+        var result = await dispatcher.Send(new SecretCommand("top-secret-value"), TestContext.Current.CancellationToken);
+
+        var field = result.Error.ShouldBeOfType<ValidationError>().Errors.ShouldHaveSingleItem();
+        field.Code.ShouldBe("InvalidSecret");
+        field.Message.ShouldNotContain("top-secret-value");
+    }
+
+    [Fact]
+    public async Task Cancellation_is_logged_without_error_level()
+    {
+        using var provider = BuildProvider();
+        using var scope = provider.CreateScope();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<IDispatcher>();
+        var logs = provider.GetRequiredService<LogRecords>();
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(() => dispatcher.Query(new CancellableQuery(), cancellation.Token));
+
+        logs.Entries.ShouldNotContain(e => e.Level >= LogLevel.Warning);
+        logs.Entries.ShouldContain(e => e.Level == LogLevel.Information && e.Message.Contains("cancelled"));
+    }
+
+    [Fact]
+    public async Task Exception_from_a_foreign_token_stays_an_error()
+    {
+        using var provider = BuildProvider();
+        using var scope = provider.CreateScope();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<IDispatcher>();
+        var logs = provider.GetRequiredService<LogRecords>();
+
+        await Should.ThrowAsync<OperationCanceledException>(
+            () => dispatcher.Query(new TimedOutQuery(), TestContext.Current.CancellationToken));
+
+        logs.Entries.ShouldContain(e => e.Level == LogLevel.Error);
+    }
+
+    [Fact]
+    public void Two_handlers_for_one_request_fail_at_startup()
+    {
+        var services = new ServiceCollection();
+        services.AddScoped(_ => Substitute.For<ICommandHandler<DoubleCommand, int>>());
+
+        var exception = Should.Throw<InvalidOperationException>(() => services.AddCqrs(typeof(DispatcherTests).Assembly));
+
+        exception.Message.ShouldContain(nameof(DoubleCommand));
     }
 
     [Fact]
@@ -86,6 +141,9 @@ public class DispatcherTests
 
         await Should.ThrowAsync<InvalidOperationException>(
             () => dispatcher.Query(new OrphanQuery(), TestContext.Current.CancellationToken));
+
+        // Resolved inside the pipeline: the logging behavior sees this failure.
+        provider.GetRequiredService<LogRecords>().Entries.ShouldContain(e => e.Level == LogLevel.Error);
     }
 
     [Fact]
@@ -103,7 +161,8 @@ public class DispatcherTests
     private static ServiceProvider BuildProvider(Action<IServiceCollection>? configure = null)
     {
         var services = new ServiceCollection();
-        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddSingleton<LogRecords>();
+        services.AddSingleton(typeof(ILogger<>), typeof(RecordingLogger<>));
         services.AddScoped<CallRecorder>();
         services.AddCqrs(typeof(DispatcherTests).Assembly);
         configure?.Invoke(services);
@@ -124,11 +183,46 @@ public sealed record NoOpCommand : ICommand;
 
 public sealed record OrphanQuery : IQuery<int>;
 
-internal sealed class DoubleCommandHandler(CallRecorder recorder) : ICommandHandler<DoubleCommand, int>
+public sealed record SecretCommand(string Secret) : ICommand<int>;
+
+public sealed record CancellableQuery : IQuery<int>;
+
+public sealed record TimedOutQuery : IQuery<int>;
+
+public sealed class LogRecords
 {
+    public List<(LogLevel Level, string Message)> Entries { get; } = [];
+}
+
+internal sealed class RecordingLogger<T>(LogRecords records) : ILogger<T>
+{
+    public IDisposable? BeginScope<TState>(TState state)
+        where TState : notnull => null;
+
+    public bool IsEnabled(LogLevel logLevel) => true;
+
+    public void Log<TState>(
+        LogLevel logLevel,
+        EventId eventId,
+        TState state,
+        Exception? exception,
+        Func<TState, Exception?, string> formatter) =>
+        records.Entries.Add((logLevel, formatter(state, exception)));
+}
+
+internal sealed class DoubleCommandHandler : ICommandHandler<DoubleCommand, int>
+{
+    private readonly CallRecorder _recorder;
+
+    public DoubleCommandHandler(CallRecorder recorder)
+    {
+        _recorder = recorder;
+        _recorder.Calls.Add("handler:created");
+    }
+
     public Task<Result<int>> Handle(DoubleCommand command, CancellationToken cancellationToken)
     {
-        recorder.Calls.Add("handler");
+        _recorder.Calls.Add("handler");
         return Task.FromResult(Result.Success(command.Value * 2));
     }
 }
@@ -143,6 +237,38 @@ internal sealed class NoOpCommandHandler : ICommandHandler<NoOpCommand, Unit>
 {
     public Task<Result<Unit>> Handle(NoOpCommand command, CancellationToken cancellationToken) =>
         Task.FromResult(Result.Success(Unit.Value));
+}
+
+internal sealed class SecretCommandHandler : ICommandHandler<SecretCommand, int>
+{
+    public Task<Result<int>> Handle(SecretCommand command, CancellationToken cancellationToken) =>
+        Task.FromResult(Result.Success(0));
+}
+
+internal sealed class CancellableQueryHandler : IQueryHandler<CancellableQuery, int>
+{
+    public Task<Result<int>> Handle(CancellableQuery query, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(Result.Success(0));
+    }
+}
+
+internal sealed class TimedOutQueryHandler : IQueryHandler<TimedOutQuery, int>
+{
+    public Task<Result<int>> Handle(TimedOutQuery query, CancellationToken cancellationToken) =>
+        throw new OperationCanceledException("A downstream timeout, not the caller.");
+}
+
+internal sealed class SecretCommandValidator : AbstractValidator<SecretCommand>
+{
+    public SecretCommandValidator()
+    {
+        RuleFor(c => c.Secret)
+            .Must(_ => false)
+            .WithErrorCode("InvalidSecret")
+            .WithMessage("{PropertyValue} is not accepted.");
+    }
 }
 
 internal sealed class DoubleCommandValidator : AbstractValidator<DoubleCommand>

@@ -6,14 +6,22 @@ var builder = DistributedApplication.CreateBuilder(args);
 var pgSecret = builder.AddParameter("pg-password", secret: true);
 var keycloakAdminSecret = builder.AddParameter("keycloak-admin-password", secret: true);
 
-// PostgreSQL 17 (ADR-001). Tag pinned; digest pinning tracked by Dependabot docker (#3).
+// Images are pinned by digest (multi-arch index), resolved from the registries. Aspire keeps the digest only,
+// so the version stays in these comments. Not seen by Dependabot: reviewed monthly (ADR-001).
+// docker.io/library/postgres:17.11
+const string PostgresDigest = "748a18a54d3842d43bc156f0840d78029b8d349e0feca98c12b9c4ce3404a6b3";
+
+// quay.io/keycloak/keycloak:26.8.1
+const string IdentityProviderDigest = "3f3c5f8e03c614774b4bd9173b88391fefa4153bfc010d8012d59ad825377332";
+
 var db = builder.AddPostgres("postgres", password: pgSecret)
-    .WithImageTag("17")
+    .WithImageSHA256(PostgresDigest)
     .WithDataVolume()
     .AddDatabase("ccr");
 
 // TODO(#9): .WithRealmImport("./Realms") once the realm (without any secret) is versioned.
 var keycloak = builder.AddKeycloak("keycloak", 8080, adminPassword: keycloakAdminSecret)
+    .WithImageSHA256(IdentityProviderDigest)
     .WithDataVolume();
 
 var api = builder.AddProject<Projects.CounterpartyRisk_Api>("api")

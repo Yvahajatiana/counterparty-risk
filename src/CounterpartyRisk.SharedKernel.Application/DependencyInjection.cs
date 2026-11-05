@@ -43,8 +43,25 @@ public static class DependencyInjection
         {
             foreach (var contract in type.GetInterfaces().Where(IsHandlerContract))
             {
-                services.TryAddEnumerable(ServiceDescriptor.Scoped(contract, type));
+                RegisterHandler(services, contract, type);
             }
+        }
+    }
+
+    private static void RegisterHandler(IServiceCollection services, Type contract, Type implementation)
+    {
+        var existing = services.FirstOrDefault(d => d.ServiceType == contract);
+        if (existing is null)
+        {
+            services.AddScoped(contract, implementation);
+            return;
+        }
+
+        // Same type again: the assembly was scanned twice. A different type would silently win at runtime.
+        if (existing.ImplementationType != implementation)
+        {
+            throw new InvalidOperationException(
+                $"Several handlers found for {contract}: {existing.ImplementationType} and {implementation}.");
         }
     }
 

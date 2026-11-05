@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
@@ -42,6 +43,19 @@ public sealed class ApiSmokeTests : IClassFixture<ApiSmokeTests.ApiFactory>
         response.Content.Headers.ContentType?.MediaType.ShouldBe("application/problem+json");
         body.ShouldNotContain("exception", Case.Insensitive);
         body.ShouldNotContain("stack", Case.Insensitive);
+    }
+
+    [Fact]
+    public async Task Problem_details_carry_the_w3c_trace_id()
+    {
+        using var client = _factory.CreateClient();
+
+        using var response = await client.GetAsync(new Uri("/does-not-exist", UriKind.Relative), TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        using var document = JsonDocument.Parse(body);
+        var traceId = document.RootElement.GetProperty("traceId").GetString();
+        traceId.ShouldNotBeNull().ShouldMatch("^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$");
     }
 
     [Fact]

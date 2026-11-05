@@ -36,6 +36,13 @@ internal sealed partial class LoggingBehavior<TRequest, TResult>(ILogger<Logging
 
             return result;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The caller gave up: expected behavior, not an application error.
+            var elapsedMs = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+            LogCancelled(requestName, elapsedMs);
+            throw;
+        }
         catch (Exception ex)
         {
             // Only the exception type is logged here; details go through the exception handler.
@@ -55,4 +62,7 @@ internal sealed partial class LoggingBehavior<TRequest, TResult>(ILogger<Logging
 
     [LoggerMessage(EventId = 1003, Level = LogLevel.Error, Message = "{RequestName} threw {ExceptionType} after {ElapsedMs} ms")]
     private partial void LogException(string requestName, string exceptionType, double elapsedMs);
+
+    [LoggerMessage(EventId = 1004, Level = LogLevel.Information, Message = "{RequestName} cancelled after {ElapsedMs} ms")]
+    private partial void LogCancelled(string requestName, double elapsedMs);
 }

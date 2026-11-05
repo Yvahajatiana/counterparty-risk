@@ -24,6 +24,7 @@
     <PackageVersion Include="Microsoft.Extensions.Compliance.Abstractions" Version="10.11.0" />
     <PackageVersion Include="Microsoft.Extensions.Compliance.Redaction" Version="10.11.0" />
     <PackageVersion Include="Microsoft.Extensions.Telemetry" Version="10.11.0" />
+    <PackageVersion Include="Microsoft.Extensions.Telemetry.Abstractions" Version="10.11.0" />
   </ItemGroup>
 
   <ItemGroup Label="Application">

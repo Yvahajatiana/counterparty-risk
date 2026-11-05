@@ -12,6 +12,8 @@ internal sealed class ValidationBehavior<TRequest, TResult>(IEnumerable<IValidat
     : IPipelineBehavior<TRequest, TResult>
     where TRequest : IRequest<TResult>
 {
+    private const string GenericMessage = "The value of this field is invalid.";
+
     public async Task<Result<TResult>> Handle(TRequest request, RequestContinuation<TResult> continuation, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(continuation);
@@ -20,8 +22,9 @@ internal sealed class ValidationBehavior<TRequest, TResult>(IEnumerable<IValidat
         {
             var validation = await validator.ValidateAsync(request, cancellationToken).ConfigureAwait(false);
 
-            // The attempted value is intentionally dropped: it may be sensitive.
-            failures.AddRange(validation.Errors.Select(e => new FieldError(e.PropertyName, e.ErrorCode, e.ErrorMessage)));
+            // ErrorMessage is deliberately not used: it can embed the attempted value ({PropertyValue}),
+            // which may be sensitive. Clients map the stable error code to a localised message.
+            failures.AddRange(validation.Errors.Select(e => new FieldError(e.PropertyName, e.ErrorCode, GenericMessage)));
         }
 
         if (failures.Count > 0)

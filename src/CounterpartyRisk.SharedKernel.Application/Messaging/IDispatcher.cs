@@ -4,8 +4,9 @@ namespace CounterpartyRisk.SharedKernel.Application.Messaging;
 
 /// <summary>
 /// Single entry point from the API, BFF and workers into the Application layer.
-/// Every request goes through the pipeline behaviors, so authorization and audit
-/// cannot be bypassed by calling a handler directly.
+/// Every request dispatched here goes through the pipeline behaviors. Handlers stay reachable
+/// from the DI container, so the guarantee relies on hosts never depending on the handler
+/// interfaces: the architecture tests enforce this rule.
 /// </summary>
 public interface IDispatcher
 {

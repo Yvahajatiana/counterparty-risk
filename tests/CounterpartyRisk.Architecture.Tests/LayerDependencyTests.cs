@@ -1,3 +1,4 @@
+using System.CodeDom.Compiler;
 using System.Reflection;
 
 namespace CounterpartyRisk.Architecture.Tests;
@@ -8,39 +9,43 @@ public class LayerDependencyTests
 
     public static TheoryData<string> Modules => [.. SolutionModel.Modules];
 
+    public static TheoryData<string> HostNames => ["Api", "Bff", "Workers"];
+
     [Theory]
     [MemberData(nameof(DomainModules))]
     public void Domain_depends_only_on_shared_kernel_and_contracts(string module)
     {
-        var ns = SolutionModel.Namespace(module, "Domain");
+        var scope = new RuleScope(SolutionModel.Layer(module, "Domain"));
 
-        Rules.Domain(module, SolutionModel.Layer(module, "Domain"), ns).ShouldPass($"Domain rule ({module})");
+        Rules.DomainAllowList(module, scope).ShouldPass($"Domain allow-list ({module})");
+        Rules.DomainExclusions(scope).ShouldPass($"Domain exclusions ({module})");
     }
 
     [Theory]
     [MemberData(nameof(Modules))]
     public void Application_does_not_depend_on_infrastructure_hosts_or_ef_core(string module)
     {
-        var ns = SolutionModel.Namespace(module, "Application");
+        var scope = new RuleScope(SolutionModel.Layer(module, "Application"));
 
-        Rules.Application(module, SolutionModel.Layer(module, "Application"), ns).ShouldPass($"Application rule ({module})");
+        Rules.Application(module, scope).ShouldPass($"Application rule ({module})");
     }
 
     [Theory]
     [MemberData(nameof(Modules))]
     public void Infrastructure_stays_inside_its_module(string module)
     {
-        var ns = SolutionModel.Namespace(module, "Infrastructure");
+        var scope = new RuleScope(SolutionModel.Layer(module, "Infrastructure"));
 
-        Rules.Infrastructure(module, SolutionModel.Layer(module, "Infrastructure"), ns).ShouldPass($"Infrastructure rule ({module})");
+        Rules.Infrastructure(module, scope).ShouldPass($"Infrastructure rule ({module})");
     }
 
     [Fact]
     public void Shared_kernel_does_not_depend_on_frameworks_or_modules()
     {
-        // The kernel is consumed by every Domain: it follows the Domain rule with no owning module.
-        Rules.Domain("SharedKernel", SolutionModel.SharedKernel, $"{SolutionModel.Root}.SharedKernel")
-            .ShouldPass("SharedKernel rule");
+        var scope = new RuleScope(SolutionModel.SharedKernel);
+
+        Rules.SharedKernelAllowList(scope).ShouldPass("SharedKernel allow-list");
+        Rules.DomainExclusions(scope).ShouldPass("SharedKernel exclusions");
     }
 
     [Fact]
@@ -57,7 +62,22 @@ public class LayerDependencyTests
     [Fact]
     public void Api_does_not_expose_domain_types()
     {
-        Rules.ApiWithoutDomain(SolutionModel.Api, $"{SolutionModel.Root}.Api").ShouldPass("Api rule");
+        Rules.ApiWithoutDomain(new RuleScope(SolutionModel.Api)).ShouldPass("Api rule");
+    }
+
+    [Fact]
+    public void Api_rule_inspects_the_composition_root()
+    {
+        new RuleScope(SolutionModel.Api).TypeNames().ShouldContain("Program");
+    }
+
+    [Theory]
+    [MemberData(nameof(HostNames))]
+    public void Hosts_go_through_the_dispatcher_only(string host)
+    {
+        var assembly = System.Reflection.Assembly.Load($"{SolutionModel.Root}.{host}");
+
+        Rules.HostWithoutHandlers(new RuleScope(assembly)).ShouldPass($"Host rule ({host})");
     }
 
     [Fact]
@@ -81,6 +101,9 @@ public class LayerDependencyTests
 
 public class ConventionTests
 {
+    private const BindingFlags AllDeclared =
+        BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
+
     private static readonly string[] SourceFolders = ["src", "tests"];
 
     [Fact]
@@ -114,13 +137,28 @@ public class ConventionTests
     {
         foreach (var assembly in SolutionModel.AllProductionAssemblies())
         {
-            Rules.NoBannedLibrary(assembly).ShouldPass($"Licence rule ({assembly.GetName().Name})");
+            Rules.NoBannedLibrary(new RuleScope(assembly)).ShouldPass($"Licence rule ({assembly.GetName().Name})");
 
             assembly.GetReferencedAssemblies()
                 .Select(a => a.Name!)
                 .Where(IsBanned)
                 .ShouldBeEmpty($"{assembly.GetName().Name} references a banned library");
         }
+    }
+
+    [Fact]
+    public void Logging_uses_the_generator_that_honours_data_classification()
+    {
+        // The default generator ignores [PersonalData]/[SensitiveData] and logs them in clear text.
+        // Its output carries this tool name in GeneratedCodeAttribute.
+        var offenders = SolutionModel.AllProductionAssemblies()
+            .SelectMany(GetLoadableTypes)
+            .SelectMany(t => t.GetMethods(AllDeclared).Cast<MemberInfo>().Append(t))
+            .Where(m => m.GetCustomAttribute<GeneratedCodeAttribute>()?.Tool == "Microsoft.Extensions.Logging.Generators")
+            .Select(m => $"{m.DeclaringType?.FullName}.{m.Name}")
+            .ToList();
+
+        offenders.ShouldBeEmpty("Reference Microsoft.Extensions.Telemetry.Abstractions (through SharedKernel.Application)");
     }
 
     [Fact]
@@ -153,7 +191,7 @@ public class ConventionTests
         offenders.ShouldBeEmpty("Banned package declared (licence)");
     }
 
-    private static bool IsBanned(string name) =>
+    internal static bool IsBanned(string name) =>
         SolutionModel.BannedLibraries.Any(b => name.Equals(b, StringComparison.OrdinalIgnoreCase)
             || name.StartsWith(b + ".", StringComparison.OrdinalIgnoreCase));
 

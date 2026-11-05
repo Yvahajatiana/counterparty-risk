@@ -143,9 +143,8 @@ public static class ServiceDefaultsExtensions
         {
             options.CustomizeProblemDetails = context =>
             {
-                // Keep only safe fields; the trace id lets support correlate with logs.
+                // The framework default traceId (W3C id of the current activity) is kept for correlation.
                 context.ProblemDetails.Extensions.Remove("exception");
-                context.ProblemDetails.Extensions["traceId"] = context.HttpContext.TraceIdentifier;
             };
         });
 

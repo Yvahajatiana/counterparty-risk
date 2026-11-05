@@ -68,8 +68,13 @@ internal sealed class CommandHandlerWrapper<TCommand, TResult> : RequestHandlerW
     public override Task<Result<TResult>> Handle(IRequest<TResult> request, IServiceProvider serviceProvider, CancellationToken cancellationToken)
     {
         var command = (TCommand)request;
-        var handler = serviceProvider.GetRequiredService<ICommandHandler<TCommand, TResult>>();
-        return RunPipeline(command, () => handler.Handle(command, cancellationToken), serviceProvider, cancellationToken);
+
+        // Resolved in the final continuation: behaviors run before the handler is instantiated.
+        return RunPipeline(
+            command,
+            () => serviceProvider.GetRequiredService<ICommandHandler<TCommand, TResult>>().Handle(command, cancellationToken),
+            serviceProvider,
+            cancellationToken);
     }
 }
 
@@ -79,7 +84,12 @@ internal sealed class QueryHandlerWrapper<TQuery, TResult> : RequestHandlerWrapp
     public override Task<Result<TResult>> Handle(IRequest<TResult> request, IServiceProvider serviceProvider, CancellationToken cancellationToken)
     {
         var query = (TQuery)request;
-        var handler = serviceProvider.GetRequiredService<IQueryHandler<TQuery, TResult>>();
-        return RunPipeline(query, () => handler.Handle(query, cancellationToken), serviceProvider, cancellationToken);
+
+        // Resolved in the final continuation: behaviors run before the handler is instantiated.
+        return RunPipeline(
+            query,
+            () => serviceProvider.GetRequiredService<IQueryHandler<TQuery, TResult>>().Handle(query, cancellationToken),
+            serviceProvider,
+            cancellationToken);
     }
 }
