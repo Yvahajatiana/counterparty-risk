@@ -6,6 +6,7 @@ using Microsoft.Extensions.Compliance.Redaction;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
@@ -40,7 +41,8 @@ public static class ServiceDefaultsExtensions
         builder.Services.AddServiceDiscovery();
         builder.Services.ConfigureHttpClientDefaults(http =>
         {
-            http.AddStandardResilienceHandler();
+            // Retrying POST, PUT, PATCH or DELETE could apply an operation twice when only the response was lost.
+            http.AddStandardResilienceHandler(options => options.Retry.DisableForUnsafeHttpMethods());
             http.AddServiceDiscovery();
         });
 
