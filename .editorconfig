@@ -115,3 +115,17 @@ indent_size = 2
 
 [*.sql]
 indent_size = 4
+
+# ---------------------------------------------------------------------------
+# Build rules (#7)
+# ---------------------------------------------------------------------------
+[*.cs]
+# Hidden by default: without this line unused usings are not reported in command-line builds
+dotnet_diagnostic.IDE0005.severity = warning
+
+# ---------------------------------------------------------------------------
+# Tests (#7)
+# ---------------------------------------------------------------------------
+[tests/**.cs]
+# Test method names use underscores
+dotnet_diagnostic.CA1707.severity = none

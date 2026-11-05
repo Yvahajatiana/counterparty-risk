@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Shared immutable contracts (#5): BCL only, no project or package reference (ADR-001 rule 5) -->
+
+</Project>

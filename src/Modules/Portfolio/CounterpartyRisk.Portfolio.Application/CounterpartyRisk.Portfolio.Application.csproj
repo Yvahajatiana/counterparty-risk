@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\CounterpartyRisk.Portfolio.Domain\CounterpartyRisk.Portfolio.Domain.csproj" />
+    <ProjectReference Include="..\..\..\CounterpartyRisk.SharedKernel.Application\CounterpartyRisk.SharedKernel.Application.csproj" />
+    <ProjectReference Include="..\..\..\CounterpartyRisk.Domain.Contracts\CounterpartyRisk.Domain.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

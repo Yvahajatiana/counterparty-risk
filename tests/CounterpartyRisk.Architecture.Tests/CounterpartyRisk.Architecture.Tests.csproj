@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="NetArchTest.Rules" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CounterpartyRisk.SharedKernel\CounterpartyRisk.SharedKernel.csproj" />
+    <ProjectReference Include="..\..\src\CounterpartyRisk.SharedKernel.Application\CounterpartyRisk.SharedKernel.Application.csproj" />
+    <ProjectReference Include="..\..\src\CounterpartyRisk.Domain.Contracts\CounterpartyRisk.Domain.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\CounterpartyRisk.ServiceDefaults\CounterpartyRisk.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\..\src\CounterpartyRisk.Api\CounterpartyRisk.Api.csproj" />
+    <ProjectReference Include="..\..\src\CounterpartyRisk.Bff\CounterpartyRisk.Bff.csproj" />
+    <ProjectReference Include="..\..\src\CounterpartyRisk.Workers\CounterpartyRisk.Workers.csproj" />
+    <ProjectReference Include="..\..\src\Modules\ReferenceData\CounterpartyRisk.ReferenceData.Domain\CounterpartyRisk.ReferenceData.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\ReferenceData\CounterpartyRisk.ReferenceData.Application\CounterpartyRisk.ReferenceData.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\ReferenceData\CounterpartyRisk.ReferenceData.Infrastructure\CounterpartyRisk.ReferenceData.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Modules\MarketData\CounterpartyRisk.MarketData.Domain\CounterpartyRisk.MarketData.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\MarketData\CounterpartyRisk.MarketData.Application\CounterpartyRisk.MarketData.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\MarketData\CounterpartyRisk.MarketData.Infrastructure\CounterpartyRisk.MarketData.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Portfolio\CounterpartyRisk.Portfolio.Domain\CounterpartyRisk.Portfolio.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Portfolio\CounterpartyRisk.Portfolio.Application\CounterpartyRisk.Portfolio.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Portfolio\CounterpartyRisk.Portfolio.Infrastructure\CounterpartyRisk.Portfolio.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Modules\RiskEngine\CounterpartyRisk.RiskEngine.Domain\CounterpartyRisk.RiskEngine.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\RiskEngine\CounterpartyRisk.RiskEngine.Application\CounterpartyRisk.RiskEngine.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\RiskEngine\CounterpartyRisk.RiskEngine.Infrastructure\CounterpartyRisk.RiskEngine.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Capital\CounterpartyRisk.Capital.Domain\CounterpartyRisk.Capital.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Capital\CounterpartyRisk.Capital.Application\CounterpartyRisk.Capital.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Capital\CounterpartyRisk.Capital.Infrastructure\CounterpartyRisk.Capital.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Reporting\CounterpartyRisk.Reporting.Application\CounterpartyRisk.Reporting.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Reporting\CounterpartyRisk.Reporting.Infrastructure\CounterpartyRisk.Reporting.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

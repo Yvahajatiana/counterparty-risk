@@ -1,0 +1,47 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CounterpartyRisk.Api/CounterpartyRisk.Api.csproj" />
+    <Project Path="src/CounterpartyRisk.AppHost/CounterpartyRisk.AppHost.csproj" />
+    <Project Path="src/CounterpartyRisk.Bff/CounterpartyRisk.Bff.csproj" />
+    <Project Path="src/CounterpartyRisk.Domain.Contracts/CounterpartyRisk.Domain.Contracts.csproj" />
+    <Project Path="src/CounterpartyRisk.ServiceDefaults/CounterpartyRisk.ServiceDefaults.csproj" />
+    <Project Path="src/CounterpartyRisk.SharedKernel.Application/CounterpartyRisk.SharedKernel.Application.csproj" />
+    <Project Path="src/CounterpartyRisk.SharedKernel/CounterpartyRisk.SharedKernel.csproj" />
+    <Project Path="src/CounterpartyRisk.Workers/CounterpartyRisk.Workers.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/" />
+  <Folder Name="/src/Modules/Capital/">
+    <Project Path="src/Modules/Capital/CounterpartyRisk.Capital.Application/CounterpartyRisk.Capital.Application.csproj" />
+    <Project Path="src/Modules/Capital/CounterpartyRisk.Capital.Domain/CounterpartyRisk.Capital.Domain.csproj" />
+    <Project Path="src/Modules/Capital/CounterpartyRisk.Capital.Infrastructure/CounterpartyRisk.Capital.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/MarketData/">
+    <Project Path="src/Modules/MarketData/CounterpartyRisk.MarketData.Application/CounterpartyRisk.MarketData.Application.csproj" />
+    <Project Path="src/Modules/MarketData/CounterpartyRisk.MarketData.Domain/CounterpartyRisk.MarketData.Domain.csproj" />
+    <Project Path="src/Modules/MarketData/CounterpartyRisk.MarketData.Infrastructure/CounterpartyRisk.MarketData.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Portfolio/">
+    <Project Path="src/Modules/Portfolio/CounterpartyRisk.Portfolio.Application/CounterpartyRisk.Portfolio.Application.csproj" />
+    <Project Path="src/Modules/Portfolio/CounterpartyRisk.Portfolio.Domain/CounterpartyRisk.Portfolio.Domain.csproj" />
+    <Project Path="src/Modules/Portfolio/CounterpartyRisk.Portfolio.Infrastructure/CounterpartyRisk.Portfolio.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/ReferenceData/">
+    <Project Path="src/Modules/ReferenceData/CounterpartyRisk.ReferenceData.Application/CounterpartyRisk.ReferenceData.Application.csproj" />
+    <Project Path="src/Modules/ReferenceData/CounterpartyRisk.ReferenceData.Domain/CounterpartyRisk.ReferenceData.Domain.csproj" />
+    <Project Path="src/Modules/ReferenceData/CounterpartyRisk.ReferenceData.Infrastructure/CounterpartyRisk.ReferenceData.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Reporting/">
+    <Project Path="src/Modules/Reporting/CounterpartyRisk.Reporting.Application/CounterpartyRisk.Reporting.Application.csproj" />
+    <Project Path="src/Modules/Reporting/CounterpartyRisk.Reporting.Infrastructure/CounterpartyRisk.Reporting.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/RiskEngine/">
+    <Project Path="src/Modules/RiskEngine/CounterpartyRisk.RiskEngine.Application/CounterpartyRisk.RiskEngine.Application.csproj" />
+    <Project Path="src/Modules/RiskEngine/CounterpartyRisk.RiskEngine.Domain/CounterpartyRisk.RiskEngine.Domain.csproj" />
+    <Project Path="src/Modules/RiskEngine/CounterpartyRisk.RiskEngine.Infrastructure/CounterpartyRisk.RiskEngine.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CounterpartyRisk.Architecture.Tests/CounterpartyRisk.Architecture.Tests.csproj" />
+    <Project Path="tests/CounterpartyRisk.IntegrationTests/CounterpartyRisk.IntegrationTests.csproj" />
+    <Project Path="tests/CounterpartyRisk.SharedKernel.UnitTests/CounterpartyRisk.SharedKernel.UnitTests.csproj" />
+  </Folder>
+</Solution>
