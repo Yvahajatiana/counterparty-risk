@@ -12,11 +12,18 @@ The project is delivered by a fixed team of agents for its whole lifecycle:
 | Back-3 | `agent:back-3` | Platform: solution skeleton, CI, security (OIDC, ABAC, audit), API, RWA |
 | Front | `agent:front` | Angular app: shell, AG Grid tables, Highcharts charts, widgets W1-W12 |
 
+## Onboarding (mandatory)
+1. Install gitleaks (`winget install Gitleaks.Gitleaks`).
+2. Enable the local hooks once per clone: `git config core.hooksPath .githooks`.
+   The pre-commit hook (gitleaks + forbidden files) is mandatory and must never be bypassed (`--no-verify` is forbidden).
+3. Read [ADR-0001](docs/adr/0001-stack-and-architecture.md) (stack, modules, dependency rules) and
+   [docs/conventions.md](docs/conventions.md) (branches, worktrees, commits, naming).
+
 ## Workflow
 1. Pick an issue whose `Depends on` items are closed (or only need a published contract).
-2. One branch per issue: `<agent>/<issue-number>-<short-name>`, ideally in its own git worktree
-   so several issues progress in parallel: `git worktree add ../cr-<issue> -b back-2/12-sa-ccr`.
-3. Enable the local hooks once: `git config core.hooksPath .githooks` (requires gitleaks).
+2. One branch per issue: `<agent>/<issue-number>-<short-name>`, in its own git worktree
+   so several issues progress in parallel: `git worktree add ../cr-21 -b back-2/21-sa-ccr origin/main`.
+3. Conventional Commits with the issue reference (`feat(risk-engine): add SA-CCR add-on (#21)`), no `Co-Authored-By` trailer.
 4. Before opening the PR, run the official Anthropic security review locally in Claude Code:
    `/security-review`. Fix findings, paste the summary in the PR.
 5. Open the PR with the template, then comment `@claude review` (Claude GitHub App).

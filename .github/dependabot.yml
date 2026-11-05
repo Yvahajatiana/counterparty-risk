@@ -1,11 +1,32 @@
 version: 2
 updates:
+  # GitHub Actions: actions are pinned by commit SHA, Dependabot bumps the SHA and the version comment
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+
+  # .NET solution (Central Package Management, see ADR-001 and #7)
   - package-ecosystem: "nuget"
     directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+
+  # Angular workspace in /web (ADR-001, #12).
+  # Becomes active once /web/package.json exists; until then Dependabot finds nothing to update.
+  - package-ecosystem: "npm"
+    directory: "/web"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+
+  # Container images (Dockerfiles, compose files) pinned by tag + digest (#7, #8).
+  # Becomes active once Dockerfiles exist at the root or under /deploy (ADR-001 repository layout).
+  # Image tags declared in the Aspire AppHost C# code are not visible to Dependabot (see ADR-001).
+  - package-ecosystem: "docker"
+    directories:
+      - "/"
+      - "/deploy/**"
+    schedule:
+      interval: "weekly"

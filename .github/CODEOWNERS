@@ -1,0 +1,62 @@
+# Code owners (ADR-0001, issue #3).
+# All agents share a single GitHub account, so every area points to @Yvahajatiana.
+# The owning agent of each area is given as a comment; reviewers use it to route business and
+# technical reviews. The last matching pattern wins: sensitive paths are listed at the end.
+
+# Default: Lead
+*                                               @Yvahajatiana # agent:lead
+
+# ---- .NET platform (solution, shared kernel, hosts) ----
+/src/CounterpartyRisk.SharedKernel/             @Yvahajatiana # agent:back-3
+/src/CounterpartyRisk.SharedKernel.Application/ @Yvahajatiana # agent:back-3
+/src/CounterpartyRisk.Api/                      @Yvahajatiana # agent:back-3
+/src/CounterpartyRisk.Bff/                      @Yvahajatiana # agent:back-3
+/src/CounterpartyRisk.Workers/                  @Yvahajatiana # agent:back-3 (ingestion jobs #19: agent:back-1)
+/src/CounterpartyRisk.ServiceDefaults/          @Yvahajatiana # agent:back-3
+/src/CounterpartyRisk.AppHost/                  @Yvahajatiana # agent:back-3
+/tests/                                         @Yvahajatiana # agent:back-3 (module tests: module owner)
+/tests/load/                                    @Yvahajatiana # agent:back-3
+/deploy/                                        @Yvahajatiana # agent:back-3
+
+# ---- Shared contracts ----
+/src/CounterpartyRisk.Domain.Contracts/         @Yvahajatiana # agent:lead
+/contracts/                                     @Yvahajatiana # agent:lead
+
+# ---- Modules (bounded contexts) ----
+/src/Modules/ReferenceData/                     @Yvahajatiana # agent:back-1
+/src/Modules/MarketData/                        @Yvahajatiana # agent:back-1
+/src/Modules/Portfolio/                         @Yvahajatiana # agent:back-2 (limits #27: agent:back-3, financings #43: agent:back-1)
+/src/Modules/RiskEngine/                        @Yvahajatiana # agent:back-2 (business review: agent:expert-ccr)
+/src/Modules/Capital/                           @Yvahajatiana # agent:back-3 (business review: agent:expert-ccr)
+/src/Modules/Reporting/                         @Yvahajatiana # agent:back-3
+/tests/CounterpartyRisk.ReferenceData.UnitTests/ @Yvahajatiana # agent:back-1
+/tests/CounterpartyRisk.MarketData.UnitTests/   @Yvahajatiana # agent:back-1
+/tests/CounterpartyRisk.Portfolio.UnitTests/    @Yvahajatiana # agent:back-2
+/tests/CounterpartyRisk.RiskEngine.UnitTests/   @Yvahajatiana # agent:back-2
+/tests/CounterpartyRisk.Capital.UnitTests/      @Yvahajatiana # agent:back-3
+/tests/CounterpartyRisk.Reporting.UnitTests/    @Yvahajatiana # agent:back-3
+
+# ---- Front end ----
+/web/                                           @Yvahajatiana # agent:front
+
+# ---- Documentation ----
+/docs/                                          @Yvahajatiana # agent:lead
+
+# ---- Sensitive paths: reserved to the Lead (keep at the end) ----
+/.github/                                       @Yvahajatiana # agent:lead
+/.githooks/                                     @Yvahajatiana # agent:lead
+/.gitleaks.toml                                 @Yvahajatiana # agent:lead
+/.gitignore                                     @Yvahajatiana # agent:lead
+/.claude/                                       @Yvahajatiana # agent:lead
+/CLAUDE.md                                      @Yvahajatiana # agent:lead
+/SECURITY.md                                    @Yvahajatiana # agent:lead
+/docs/adr/                                      @Yvahajatiana # agent:lead
+/docs/security/                                 @Yvahajatiana # agent:lead
+/scripts/                                       @Yvahajatiana # agent:lead
+# Supply chain files (package sources, central versions, SDK pinning)
+/nuget.config                                   @Yvahajatiana # agent:lead
+/global.json                                    @Yvahajatiana # agent:lead
+/Directory.Packages.props                       @Yvahajatiana # agent:lead
+/Directory.Build.props                          @Yvahajatiana # agent:lead
+# Authentication / authorisation code anywhere in the tree
+**/Auth*/                                       @Yvahajatiana # agent:lead
