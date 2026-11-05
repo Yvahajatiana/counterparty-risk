@@ -50,9 +50,9 @@ git config core.hooksPath .githooks       # mandatory: gitleaks + forbidden file
 
 1. Fill in `.github/pull_request_template.md`, with `Closes #N` and the `agent:<name>` label.
 2. Run the official Anthropic `/security-review` locally and paste its summary in the PR.
-3. Comment `@claude review` on the PR (Claude GitHub App; no Anthropic API key in CI).
+3. Codex reviews the PR automatically; comment `@codex review` after new commits (no Anthropic API key in CI).
 4. Issues labelled `review:expert-ccr` also need the Expert CCR validation as a PR comment.
-5. The Lead records an acceptance comment, then merges once every required check is green.
+5. The Lead runs a local Claude review (`/code-review`), then merges once every required check is green and every review thread is resolved.
    Agents never merge their own PR.
 
 ## 5. Code

@@ -12,7 +12,7 @@ Please do **not** open a public issue. Use GitHub private vulnerability reportin
 
 - No secrets in the repository: use user-secrets locally and a vault / GitHub secrets in CI.
 - Locally: gitleaks pre-commit hook (`.githooks`) and the official Anthropic `/security-review` before every PR.
-- CI blocks merges on: gitleaks, TruffleHog, forbidden files guard. PRs are reviewed by the Claude GitHub App (`@claude review`).
+- CI blocks merges on: gitleaks, TruffleHog, forbidden files guard. PRs are reviewed automatically by Codex, then locally by the Lead with Claude (`/code-review`).
 - No real confidential portfolio data is ever committed: only public open data and synthetic data.
 - Access to figures is filtered by legal entity and business line (least privilege).
 

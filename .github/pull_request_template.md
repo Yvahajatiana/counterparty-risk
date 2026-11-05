@@ -34,4 +34,4 @@ ASVS 5.0 L2 mini-checklist (tick what applies, write `n/a` otherwise; full rows 
 <!-- Paste the /security-review summary here -->
 
 ---
-After opening the PR, comment `@claude review` to trigger the Claude GitHub App review.
+Codex reviews the PR automatically when it opens (re-trigger with `@codex review` after new commits). The Lead then runs a local Claude review (`/code-review`) before merging.

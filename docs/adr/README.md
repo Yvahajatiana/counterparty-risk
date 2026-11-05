@@ -8,7 +8,7 @@ ADRs follow the [MADR](https://adr.github.io/madr/) format, adapted with a manda
 
 | ADR | Title | Status | Issue |
 | --- | --- | --- | --- |
-| [0001](0001-stack-and-architecture.md) | Stack, Clean/DDD/CQRS modular monolith, repository layout and conventions | Proposed | #3 |
+| [0001](0001-stack-and-architecture.md) | Stack, Clean/DDD/CQRS modular monolith, repository layout and conventions | Accepted | #3 |
 
 ADR-002 (arbitration of the open points of the EDB) is expected from #6.
 
