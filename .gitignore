@@ -549,3 +549,6 @@ dist/
 .DS_Store
 Thumbs.db
 .claude/settings.local.json
+
+# Agent git worktrees (Claude Code isolation)
+.claude/worktrees/

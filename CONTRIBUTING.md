@@ -26,9 +26,9 @@ The project is delivered by a fixed team of agents for its whole lifecycle:
 3. Conventional Commits with the issue reference (`feat(risk-engine): add SA-CCR add-on (#21)`), no `Co-Authored-By` trailer.
 4. Before opening the PR, run the official Anthropic security review locally in Claude Code:
    `/security-review`. Fix findings, paste the summary in the PR.
-5. Open the PR with the template, then comment `@claude review` (Claude GitHub App).
+5. Open the PR with the template. Codex reviews it automatically; comment `@codex review` after new commits.
 6. Issues labelled `review:expert-ccr` also need the business validation of the Expert CCR agent (`.claude/agents/expert-ccr.md`), recorded as a PR comment.
-7. The Lead reviews and merges. CI (secret scan, build, tests) must be green.
+7. The Lead runs a local Claude review (`/code-review`), then merges. CI (secret scan, build, tests) must be green and every review thread resolved.
 
 ## Rules
 - Secure by Design first: `priority:security-by-design` issues are done before feature work they gate.

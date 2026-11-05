@@ -162,7 +162,7 @@ Service identities and their exact rights are defined in [data-flow.md](data-flo
 | TM-TB6-02 | T | Malicious or vulnerable dependency (NuGet, npm typosquatting, vulnerable transitive package) | High | Lock files, package source mapping, `dotnet list package --vulnerable`, `npm audit`, CycloneDX SBOM, Trivy, remediation time frames | SEC-184, SEC-185, SEC-187 | #8, #12 | `Build_Should_Fail_On_High_Vulnerability` (CI gate) |
 | TM-TB6-03 | I | Secret or private document committed (EDB, PDF, key) | High | gitleaks pre-commit hook and CI, TruffleHog, forbidden files guard, GitHub push protection | SEC-168 | #3, #8 | CI jobs `gitleaks`, `trufflehog`, `forbidden-files` |
 | TM-TB6-04 | E | Workflow abuse: `pull_request_target` running untrusted code with write token, secret exfiltration | Medium | No `pull_request_target` on untrusted code, least-privilege `GITHUB_TOKEN`, no secrets in CI besides `GITHUB_TOKEN` | SEC-169 | #3, #8 | - |
-| TM-TB6-05 | T | Unreviewed change merged to `main` | Medium | Branch protection, CODEOWNERS, required checks, `@claude review` and Lead approval | - | #3 | - |
+| TM-TB6-05 | T | Unreviewed change merged to `main` | Medium | Branch protection, CODEOWNERS, required checks, Codex review and Lead local review (`/code-review`) | - | #3 | - |
 | TM-TB6-06 | T | Tampered base image (PostgreSQL, .NET runtime, Keycloak) | Medium | Images pinned by digest, Trivy image scan | SEC-185 | #8, #11 | - |
 
 ### TB7 - Export file to the user workstation (flow F15)
@@ -314,4 +314,4 @@ The threat model is reviewed and versioned:
 - whenever a pull request adds a trust boundary or a flow listed in [data-flow.md](data-flow.md)
   (new external source, public route, WebSocket / SignalR, file upload, external ORE or pricing engine,
   new database role, new deployment target);
-- after any security incident or a High finding from `/security-review`, `@claude review`, CodeQL or ZAP.
+- after any security incident or a High finding from `/security-review`, `/code-review`, Codex, CodeQL or ZAP.

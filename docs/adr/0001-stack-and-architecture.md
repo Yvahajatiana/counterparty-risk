@@ -1,6 +1,6 @@
 # ADR-0001: Stack, Clean/DDD/CQRS modular monolith, repository layout and conventions
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-04
 - **Deciders:** agent:lead (with agent:back-3 for the .NET platform and agent:front for the web stack)
 - **Issue:** #3
@@ -247,8 +247,8 @@ merged:
   direct pushes to `main` stay rejected for everyone, but the single admin account is never locked out
   of merging.
 
-The Lead's validation is a procedural step: `@claude review` comment, then an acceptance comment by
-the Lead on the PR before merging.
+The Lead's validation is a procedural step: Codex review, then a local Claude review (`/code-review`) by
+the Lead before merging. The Claude GitHub App does not answer `@claude review` without a workflow, so it is not used.
 
 ## Consequences
 
@@ -259,7 +259,7 @@ the Lead on the PR before merging.
 - Bad: the Highcharts licence must be revisited if the project ever becomes commercial (mitigated by
   the `ChartAdapter`).
 - Bad: no human approval is technically enforced on PRs (single account); compensated by required
-  checks, `@claude review` and the Lead's acceptance comment.
+  checks, the Codex review and the Lead's local Claude review.
 - Follow-up: #7 (skeleton and architecture tests), #8 (CI checks added to the ruleset, SBOM, licence
   check), #9 (BFF), #11 (schemas, RLS), #12 (`web/` workspace), #14 (`ChartAdapter`), #41 (licence docs).
 
@@ -283,7 +283,7 @@ the Lead on the PR before merging.
 - **Secrets**: user-secrets locally (Aspire parameters with `secret: true`), GitHub secrets in CI, a vault
   (HashiCorp Vault / Azure Key Vault) as target. No connection string with a password in
   `appsettings*.json` (gitleaks rule `connection-string-password`).
-- **No Anthropic API key in CI**: PR reviews go through the Claude GitHub App (`@claude review`) and the
+- **No Anthropic API key in CI**: PR reviews go through Codex, the local `/code-review` and the
   local `/security-review`; no workflow ever reads an Anthropic key (gitleaks rule `anthropic-api-key`).
 - **Local guardrails**: the `.githooks/pre-commit` hook (gitleaks + forbidden files) is mandatory for
   every contributor (`git config core.hooksPath .githooks`), see `CONTRIBUTING.md`.
