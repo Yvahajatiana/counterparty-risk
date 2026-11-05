@@ -13,7 +13,7 @@
     "check:contrast": "node scripts/check-contrast.mjs",
     "check:licenses": "node scripts/check-licenses.mjs",
     "serve:csp": "node scripts/serve-csp.mjs",
-    "test:scripts": "node --test scripts/"
+    "test:scripts": "node --test \"scripts/**/*.test.mjs\""
   },
   "private": true,
   "packageManager": "npm@11.4.2",
