@@ -19,12 +19,12 @@ flowchart LR
     XF[["Exported CSV / XLSX file"]]
   end
 
-  subgraph Z1["Z1 - Edge (only public entry point)"]
+  subgraph Z1["Z1 - Edge (public entry point 1: application)"]
     BFF["CounterpartyRisk.Bff<br/>cookie session, OIDC client, YARP, CSP, rate limiting"]
   end
 
-  subgraph Z2["Z2 - Identity provider"]
-    KC["Keycloak - realm ccr"]
+  subgraph Z2["Z2 - Identity provider (public entry point 2: login)"]
+    KC["Keycloak - realm ccr<br/>public: login endpoint, own hostname<br/>private: admin console"]
   end
 
   subgraph Z3["Z3 - Internal application network"]
@@ -95,12 +95,22 @@ flowchart LR
   ART -- "F18 TB6 deployment" --> Z3
 ```
 
+## Public entry points
+
+The system has **two** public entry points, on separate hostnames (SEC-041):
+
+1. The BFF (Z1): SPA, `/bff/*` and `/api/*` (F1, F2).
+2. The Keycloak login endpoint (Z2): the browser reaches it directly during the OIDC front channel (F3). Only the `ccr` realm paths needed for login are published.
+
+The Keycloak admin console stays **private**: it is reachable from the internal network only (F32) and is not
+published with the login endpoint. Everything else, including the API, has no public endpoint.
+
 ## Trust boundaries
 
 | Id | Boundary | Crossing flows | Authentication across the boundary | Main controls |
 | --- | --- | --- | --- | --- |
-| TB1 | Browser to BFF (`CounterpartyRisk.Bff`) | F1, F2 | Session cookie `__Host-ccr` (opaque key, server-side ticket) | TLS, cookie flags, `X-CSRF` header, CSP, rate limiting, audit |
-| TB2 | BFF / browser / API / administrator to Keycloak | F3, F4, F5, F7, F32 | OIDC Authorization Code + PKCE S256, confidential client `ccr-bff`; separate admin credentials for F32 | Exact redirect URIs, `state` / `nonce`, issuer and signature validation, MFA, admin console not exposed through the edge |
+| TB1 | Browser to BFF (`CounterpartyRisk.Bff`), public entry point 1; the browser also reaches public entry point 2 directly, through TB2 (F3) | F1, F2 | Session cookie `__Host-ccr` (opaque key, server-side ticket) | TLS, cookie flags, `X-CSRF` header, CSP, rate limiting, audit |
+| TB2 | BFF / browser / API / administrator to Keycloak; F3 crosses from the internet to public entry point 2, F32 stays on the internal network | F3, F4, F5, F7, F32 | OIDC Authorization Code + PKCE S256, confidential client `ccr-bff`; separate admin credentials for F32 | Exact redirect URIs, `state` / `nonce`, issuer and signature validation, MFA, brute force detection on the public login endpoint, admin console not published |
 | TB3 | BFF to API (`CounterpartyRisk.Api`) | F6 | JWT access token, audience `ccr-api`, added server-side by YARP | API not exposed outside the internal network, JWT revalidated, ABAC per request |
 | TB4 | Components to data, secret and telemetry stores (PostgreSQL, Keycloak database, audit anchors, vault, collector) | F8, F9, F10, F13, F14, F19-F31 | One identity per **permission set**, not per component (see [Identities](#identities)) | Least privilege roles, `FORCE` RLS, TLS `VerifyFull`, parameterised SQL, separate key rings, external audit anchors |
 | TB5 | Workers to external open data sources | F11, F12 | Server certificate only (sources are anonymous) | HTTPS, host allowlist, no cross-domain redirect, size limits, integrity checks, safe parsing, quarantine |
