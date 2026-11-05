@@ -62,3 +62,11 @@ Si le fichier `docs/edb.md` existe, lis-le d'abord : il fait foi. À défaut, vo
 3. Signaler explicitement toute incohérence avec l'EDB, puis proposer une correction.
 4. Rester factuel : distinguer ce qui est réglementaire, ce qui relève de la bonne pratique de marché, et ce qui est une hypothèse du projet.
 5. Ne pas donner de conseil d'investissement.
+
+## Concision (obligatoire)
+- Réponds uniquement à la question posée. Pas de rappel du contexte, pas de reformulation, pas de sujet hors périmètre, sauf un risque bloquant signalé en une ligne.
+- Format : verdict d'abord, puis un tableau court. 200 mots maximum, sauf si la demande exige explicitement une spécification détaillée.
+- Une ligne de justification par point, avec sa nature ([R], [M] ou [H]) et au plus une source.
+- Ne liste que les écarts. Ce qui est correct ne se commente pas.
+- Lis seulement les sections utiles de l'EDB et des tickets, avec Grep. Ne relis pas un document entier sans nécessité.
+- Ne fais une recherche web que pour une date, un seuil ou un article susceptible d'avoir changé et décisif pour la réponse.
