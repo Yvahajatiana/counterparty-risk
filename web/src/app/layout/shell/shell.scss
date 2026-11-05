@@ -1,0 +1,61 @@
+@use '@angular/material' as mat;
+
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.cr-topbar {
+  @include mat.toolbar-overrides(
+    (
+      container-background-color: var(--cr-color-topbar),
+      container-text-color: var(--cr-color-on-topbar),
+      standard-height: var(--cr-topbar-height),
+    )
+  );
+
+  position: sticky;
+  border-bottom: 1px solid var(--cr-color-border);
+  top: 0;
+  z-index: 2;
+}
+
+.cr-brand {
+  color: inherit;
+  font: var(--mat-sys-title-medium);
+  text-decoration: none;
+}
+
+.cr-theme-toggle {
+  @include mat.button-overrides(
+    (
+      outlined-label-text-color: var(--cr-color-on-topbar),
+      outlined-outline-color: var(--cr-color-on-topbar),
+    )
+  );
+}
+
+.cr-container {
+  flex: 1;
+  background: var(--cr-color-surface-alt);
+}
+
+.cr-sidenav {
+  @include mat.sidenav-overrides(
+    (
+      container-shape: 0,
+    )
+  );
+  // Compact navigation: body-medium instead of the default body-large.
+  @include mat.list-overrides(
+    (
+      list-item-label-text-size: var(--mat-sys-body-medium-size),
+      list-item-label-text-line-height: var(--mat-sys-body-medium-line-height),
+    )
+  );
+
+  width: var(--cr-sidenav-width);
+  border-right: 1px solid var(--cr-color-border);
+  background: var(--cr-color-surface);
+}

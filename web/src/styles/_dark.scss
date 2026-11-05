@@ -1,0 +1,40 @@
+// Corporate design tokens, dark theme.
+// Applied when the OS prefers dark (unless the user forced light) or when the user forced dark
+// with data-theme="dark" on <html> (see ThemeService).
+
+@mixin dark {
+  --cr-color-primary: #8fb3de;
+  --cr-color-on-primary: #0b1a2e;
+  --cr-color-surface: #121821;
+  --cr-color-surface-alt: #1a2230;
+  --cr-color-text: #e6eaf0;
+  --cr-color-text-muted: #a3adbb;
+  --cr-color-border: #2c3644;
+  --cr-color-topbar: #1a2230;
+  --cr-color-on-topbar: #e6eaf0;
+
+  --cr-status-ok: #81c784;
+  --cr-status-warn: #ffb74d;
+  --cr-status-breach: #f28b82;
+
+  --cr-series-1: #56b4e9;
+  --cr-series-2: #e69f00;
+  --cr-series-3: #2dc79a;
+  --cr-series-4: #cc79a7;
+  --cr-series-5: #f0e442;
+  --cr-series-6: #bdbdbd;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+
+    @include dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  @include dark;
+}

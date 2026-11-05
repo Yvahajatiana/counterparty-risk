@@ -1,0 +1,29 @@
+/*
+ * Tailwind CSS v4, layout only (grid, flex, spacing, sizing).
+ *
+ * Coexistence rules with Angular Material:
+ * - Preflight (Tailwind's CSS reset) is NOT imported: Material and the browser defaults stay intact.
+ * - Every Tailwind rule lives in a cascade layer. Unlayered CSS (Angular Material, component styles)
+ *   always wins over layered CSS, so a utility class can never override a Material component.
+ * - Colors and fonts exposed to Tailwind are aliases of the design tokens (src/styles/_tokens.scss).
+ */
+@layer theme, base, components, utilities;
+
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities) source(none);
+
+/* Automatic detection is off (source(none)): only the application sources are scanned. */
+@source './app';
+
+@theme inline {
+  --font-sans: var(--cr-font-family);
+  --color-cr-primary: var(--cr-color-primary);
+  --color-cr-surface: var(--cr-color-surface);
+  --color-cr-surface-alt: var(--cr-color-surface-alt);
+  --color-cr-text: var(--cr-color-text);
+  --color-cr-text-muted: var(--cr-color-text-muted);
+  --color-cr-border: var(--cr-color-border);
+  --color-cr-ok: var(--cr-status-ok);
+  --color-cr-warn: var(--cr-status-warn);
+  --color-cr-breach: var(--cr-status-breach);
+}
