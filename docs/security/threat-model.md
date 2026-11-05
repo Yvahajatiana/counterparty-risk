@@ -84,7 +84,7 @@ flowchart LR
 | TM-TB1-09 | S | Open redirect through the `returnUrl` of `/bff/login` used for phishing | Medium | Only local, relative return URLs accepted | SEC-043 | #9 | - |
 | TM-TB1-10 | I | Stack traces or SQL errors returned to the browser | Medium | Generic `ProblemDetails` (RFC 9457), no exception details outside `Development` | SEC-210 | #7, #10 | - |
 
-### TB2 - BFF, browser and API to Keycloak (flows F3, F4, F5, F7)
+### TB2 - BFF, browser, API and administrator to Keycloak (flows F3, F4, F5, F7, F32)
 
 | Id | STRIDE | Threat (concrete example) | Sev. | Mitigation | Requirements | Ticket | Abuse-case test |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -114,21 +114,29 @@ flowchart LR
 | TM-TB3-10 | S / E | Client-supplied `Authorization`, `X-Forwarded-*` or `X-User-*` header passed through the proxy | Medium | YARP transform removes `Cookie` and any client `Authorization`, then adds the server-side token | SEC-046 | #9 | `Should_Strip_Client_Authorization_Header_Before_Proxying` |
 | TM-TB3-11 | T | Misleading figures: economic and regulatory measures mixed, benchmark presented as recomputed value | Medium | `meta.exposureLevel`, `meta.measureKind`, `lineage` mandatory in every response; benchmarks served by distinct endpoints under `ReadMarketAndBenchmark`, with attribution (rule R6) | SEC-020, SEC-102 | #5, #31 | `Benchmark_Response_Should_Carry_Attribution_And_Separate_Series` |
 | TM-TB3-12 | I | Large-exposure ratio (exposure / Tier 1) of W10 returned to a user without `ReadCapital`, or computed on a business-line subset (capital leak and misleading ratio) | High | Rule R2: row returned only with `ReadCapital` and a scope covering all business lines of the legal entity; never allocated to a business line | SEC-103, SEC-105 | #9, #30, #31 | `Should_Not_Return_LargeExposure_Ratio_Without_Full_Entity_Scope` |
-| TM-TB3-13 | E / T / R | Limit amount changed without independent approval: maker approves its own change, front office modifies a limit it consumes, a pending change already feeds W4, change cannot be traced | High | `ManageLimits` (limit-admin) and `ApproveLimitChange` (direction) separated; maker != checker on `sub`; pending changes excluded from W4 utilisation; audit of old value, new value, maker, checker, timestamp (rule R4) | SEC-021, SEC-104, SEC-192, SEC-198 | #10, #27, #31 | `Should_Return403_When_Maker_Approves_Own_Limit_Change`, `Should_Return403_When_FrontOffice_Calls_ManageLimits`, `Should_Not_Use_Pending_Limit_Change_In_W4_Utilisation` |
+| TM-TB3-13 | E / T / R | Limit amount changed without independent approval: maker approves its own change, front office modifies a limit it consumes, a pending change already feeds W4, change cannot be traced | High | `ManageLimits` (limit-admin) and `ApproveLimitChange` (direction) separated; maker != checker on `sub`, in the handler and by a database `CHECK`; writes through `cr_limit_writer` only (F22) with RLS `WITH CHECK`; pending changes excluded from W4 utilisation; audit of old value, new value, maker, checker, timestamp (rule R4) | SEC-021, SEC-104, SEC-192, SEC-198 | #10, #27, #31 | `Should_Return403_When_Maker_Approves_Own_Limit_Change`, `Should_Return403_When_FrontOffice_Calls_ManageLimits`, `Should_Not_Use_Pending_Limit_Change_In_W4_Utilisation` |
 
-### TB4 - API, BFF, workers and migrations to PostgreSQL, audit anchoring (flows F8, F9, F10, F13, F14, F19, F20, F21)
+### TB4 - Components to data, secret and telemetry stores (flows F8, F9, F10, F13, F14, F19-F31)
+
+Service identities and their exact rights are defined in [data-flow.md](data-flow.md#identities).
 
 | Id | STRIDE | Threat (concrete example) | Sev. | Mitigation | Requirements | Ticket | Abuse-case test |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | TM-TB4-01 | I | RLS bypass: new table without policy, view without `security_invoker`, role with `BYPASSRLS`, scope variable leaking across pooled connections | High | `ENABLE` + `FORCE ROW LEVEL SECURITY`, `WITH CHECK`, `set_config(..., true)` scoped to the transaction, fail-closed when unset, tests on `pg_class.relrowsecurity` and view options | SEC-108, SEC-212 | #11, #43 | `Should_Return_Zero_Rows_When_Scope_Is_Not_Set`, `All_Tables_With_LegalEntityId_Should_Have_Forced_Rls` |
-| TM-TB4-02 | E | A compromised API process writes or alters data, or runs DDL | High | `cr_reader` SELECT only, `cr_writer` for workers, `cr_migrator` only for the migration bundle, no `SUPERUSER` / `BYPASSRLS`, the API never migrates | SEC-164 | #11 | `CrReader_Should_Not_Insert_Update_Delete_Or_Alter` |
-| TM-TB4-03 | T / R | Audit trail tampering (update, delete, truncation), including by a PostgreSQL superuser who recomputes the chain | High | `cr_audit_writer` INSERT only, trigger rejecting UPDATE / DELETE; **keyed** chain `HMAC-SHA-256(key, prev_hash ‖ row)` with the key in the vault, outside PostgreSQL; chain head (`seq`, HMAC) anchored every hour in an append-only store of a separate trust domain by an append-only publisher identity (F20); scheduled verification reads the anchors with a separate read-only identity (F21), compares them with the recomputed chain and raises an alert. Detects: any modification, deletion, insertion or truncation of rows up to the last anchor, even by a DBA (who cannot recompute the HMAC without the key). Does not detect: truncation of events written after the last anchor (window <= 1 h), or forged events appended by a compromised audit writer that holds the key | SEC-208 | #10 | `Should_Detect_Broken_Audit_Chain_At_Exact_Sequence`, `Should_Detect_Recomputed_Chain_Against_External_Anchor` |
+| TM-TB4-02 | E | A compromised API process writes or alters data, or runs DDL | High | One identity per permission set (data-flow.md): `cr_reader` SELECT only; the only business write role of the API is `cr_limit_writer`, limited to the limit tables and subject to RLS `WITH CHECK`; `cr_writer` for workers only; `cr_migrator` only for the migration bundle; no `SUPERUSER` / `BYPASSRLS`; the API never migrates | SEC-164 | #11, #27 | `CrReader_Should_Not_Insert_Update_Delete_Or_Alter`, `CrLimitWriter_Should_Not_Write_Outside_Limit_Tables`, `Should_Reject_Limit_Change_Outside_Scope` |
+| TM-TB4-03 | T / R | Audit trail tampering (update, delete, truncation), including by a PostgreSQL superuser who recomputes the chain | High | `cr_audit_writer` limited to INSERT and column-level `SELECT (seq, hash)` to chain the previous hash, trigger rejecting UPDATE / DELETE; **keyed** chain `HMAC-SHA-256(key, prev_hash ‖ row)` with the key in the vault, outside PostgreSQL; chain head (`seq`, HMAC) anchored every hour in an append-only store of a separate trust domain by an append-only publisher identity (F20); scheduled verification reads the events with `cr_audit_verifier` (F23) and the anchors with a separate read-only identity (F21), compares them with the recomputed chain and raises an alert. Detects: any modification, deletion, insertion or truncation of rows up to the last anchor, even by a DBA (who cannot recompute the HMAC without the key). Does not detect: truncation of events written after the last anchor (window <= 1 h), or forged events appended by a compromised audit writer that holds the key | SEC-208 | #10 | `Should_Detect_Broken_Audit_Chain_At_Exact_Sequence`, `Should_Detect_Recomputed_Chain_Against_External_Anchor`, `CrAuditWriter_Should_Only_Read_Seq_And_Hash`, `CrAuditVerifier_Should_Only_Read_Audit_Events` |
 | TM-TB4-04 | I | Database credentials leaked (repository, logs, image) or connection without TLS | High | Secrets store, no password in `appsettings`, `SSL Mode=VerifyFull` outside local, startup validation | SEC-158, SEC-163, SEC-168 | #10, #11 | `Appsettings_Should_Not_Contain_Secrets` |
 | TM-TB4-05 | I | Amounts, LEIs or SQL parameters written to logs | Medium | No `EnableSensitiveDataLogging`, `LogParameters=false`, `Include Error Detail=false` outside `Development` | SEC-202 | #10, #11 | - |
-| TM-TB4-06 | I | Foreign-key error used as a side channel to learn that a row exists in another entity | Low | Only `cr_writer` jobs insert; database errors never reach the client | SEC-210 | #43 | - |
+| TM-TB4-06 | I | Foreign-key error used as a side channel to learn that a row exists in another entity | Low | Business tables are written by `cr_writer` jobs, and by `cr_limit_writer` for limit tables only; database errors never reach the client | SEC-210 | #43 | - |
 | TM-TB4-07 | T | Historical results silently rewritten (calc, financing snapshots) | Medium | INSERT-only grants on snapshots, `method_version_id` and `lineage` NOT NULL, regeneration through a new ingestion run | SEC-023 | #11, #26, #43 | - |
-| TM-TB4-08 | S / T | Theft of the ticket store or of a Data Protection key ring from the database, allowing cookie or cursor forgery | Medium | Two separate key rings: BFF (`ccr-bff`, table `dpkeys.bff_key`, role `cr_bff_keys`, flow F10) and API (`ccr-api`, table `dpkeys.api_key`, role `cr_api_keys`, flow F19); each table readable and insertable only by its own role, never by `cr_reader`; keys encrypted at rest with key-encryption keys from the vault; tokens stored inside protected tickets | SEC-147, SEC-148, SEC-164 | #9, #31 | - |
+| TM-TB4-08 | S / T | Theft of the ticket store or of a Data Protection key ring from the database, allowing cookie or cursor forgery | Medium | Tickets in `session.ticket`, role `cr_bff_session` only (F26). Two separate key rings: BFF (`ccr-bff`, table `dpkeys.bff_key`, role `cr_bff_keys`, flow F10) and API (`ccr-api`, table `dpkeys.api_key`, role `cr_api_keys`, flow F19); each table readable and insertable only by its own role, never by `cr_reader`; keys encrypted at rest with key-encryption keys from the vault; tokens stored inside protected tickets | SEC-147, SEC-148, SEC-164 | #9, #31 | - |
 | TM-TB4-09 | D | Rows landing in the `DEFAULT` partition, unbounded table growth | Low | `meta.ensure_partitions` M+3, monitoring of `DEFAULT`, retention by partition detach | - | #11, #19 | - |
+| TM-TB4-10 | I | A compromised component reads the secrets of another component in the vault | Medium | One service identity per component, each limited to its own secrets (F30); audit chain key readable only by the audit writers and the verification job | SEC-168, SEC-169 | #10, #41 | - |
+| TM-TB4-11 | T / I | Logs intercepted in transit or altered on the application host | Medium | OTLP over TLS to a collector separate from the application (F31), RBAC on the collector, no secret in logs | SEC-202, SEC-209 | #7, #10, #41 | - |
+| TM-TB4-12 | I | Audit trail (C1-PD) read outside the `ReadAudit` endpoint | Medium | `cr_audit_reader` connection used only by the audit read handler, behind `ReadAudit`; `cr_reader` has no access to `audit` | SEC-164, SEC-208 | #10, #11 | - |
+| TM-TB4-13 | T | Quartz schedule altered to disable a control (audit verification, data quality) or to run a job with forged data | Medium | `cr_scheduler` limited to `quartz` and `meta.ingestion_run`; jobs defined in code; alert when the verification job stops running | SEC-014, SEC-164 | #11, #19 | - |
+| TM-TB4-14 | E / T | Partition maintenance abused to run DDL or to drop history or audit data | Medium | `cr_partition_job` has `EXECUTE` only on two `SECURITY DEFINER` procedures with validated parameters; the purge excludes `audit`, whose partitions are only detached by a traced operating procedure | SEC-164 | #11, #19, #26 | - |
+| TM-TB4-15 | I / E | Keycloak database access exposes hashed credentials and sessions, or a Keycloak compromise reaches application data | Medium | Separate database, `cr_keycloak` has no access to the application database, TLS, password hashing by Keycloak | SEC-150, SEC-164 | #9, #41 | - |
 
 ### TB5 - Workers to external open data sources (flows F11, F12)
 
@@ -185,10 +193,11 @@ flowchart LR
 | Keycloak | TM-TB2-02, -04, -05, -07, -08, -09 | Realm as code, MFA, brute force detection, password policy, events (#9) |
 | API | TM-TB2-03, TM-TB2-09, TM-TB3-01..13, TM-TB7-01..05 | JWT validation, ABAC, allowlisted filters, DTOs, audit, export pipeline (#9, #10, #31) |
 | Workers | TM-TB5-01..11, TM-INT-01, -02 | Safe ingestion, quarantine, integrity checks, bounded jobs (#15-#19, #22, #26) |
-| PostgreSQL | TM-TB4-01..09 | RLS, roles, TLS, audit schema, partitions (#10, #11, #43) |
+| PostgreSQL | TM-TB4-01..09, -12..15 | RLS, roles, TLS, audit schema, partitions (#10, #11, #43) |
+| Vault, collector | TM-TB4-04, -10, -11 | Per-service identities, TLS, separate log destination (#10, #41) |
 | CI/CD | TM-TB6-01..06 | Pinned actions, scans, SBOM, branch protection (#3, #8) |
 
-Count: **67 threats** (TB1: 10, TB2: 9, TB3: 13, TB4: 9, TB5: 11, TB6: 6, TB7: 5, internal: 4), of which
+Count: **73 threats** (TB1: 10, TB2: 9, TB3: 13, TB4: 15, TB5: 11, TB6: 6, TB7: 5, internal: 4), of which
 **31 High**, each with a named abuse-case test.
 
 ## 7. Authorization matrix (input to #9 and #31)
@@ -254,7 +263,26 @@ Tests: `Realm_Should_Not_Assign_Incompatible_Roles`, `Should_Return403_When_Toke
 An empty scope returns 403 (`Should_Return403_And_Issue_No_Sql_When_Scope_Is_Empty`). A front-office
 account with a wildcard (`*`) scope is rejected (`Should_Return403_When_FrontOffice_Scope_Is_Wildcard`).
 
-References: BCBS 239 principles 2 and 11, EBA/GL/2021/05 (internal governance, segregation of duties),
+### 7.5 Endpoints outside the matrix
+
+| Endpoint or command | Access | Note |
+| --- | --- | --- |
+| `/bff/login`, BFF OIDC callback | Anonymous | `login` rate limit; `state`, `nonce`, PKCE (#9) |
+| Back-channel logout endpoint | Anonymous, signed logout token | Token validation, TM-TB2-06 (#9) |
+| `/csp-report` | Anonymous | Rate limited, size limited, logged (#10) |
+| `/bff/user`, `/bff/logout` | Any authenticated user | Minimal profile, antiforgery on logout (#9) |
+| Health endpoints | Internal network only | No business data (#7) |
+| `PublishMethodVersionCommand`, history recomputation (#26) | **Denied to every role** | No validated capability yet |
+| Manual job trigger (#19) | **Denied to every role** | No validated capability yet |
+| `/data-quality/*` detail endpoints (#19) | **Denied to every role** | No validated capability yet; the status reaches users through `meta.dataQuality` of each response |
+
+The last three rows stay denied by default until the Expert CCR validates a capability for them. They are
+"admin" or "data-steward" features of #19 and #26, and neither role exists in the realm. Enabling one requires a
+new row in 7.1 and, for a write, a dedicated identity in [data-flow.md](data-flow.md#identities).
+
+### 7.6 References
+
+BCBS 239 principles 2 and 11, EBA/GL/2021/05 (internal governance, segregation of duties),
 CRR art. 287 / BCBS CRE53 (independent CCR control unit), BCBS *Principles for the Management of Credit Risk*
 principles 6 and 15. The split of capabilities, the refusal of exports to the front office, the default
 scopes and the choice of direction as limit approver are project assumptions.
@@ -275,6 +303,8 @@ scopes and the choice of direction as limit approver are project assumptions.
 | RR-10 | Keycloak breached-password check relies on an offline deny list | No native online breach check | Accepted; list refreshed with Keycloak upgrades (#9) |
 | RR-11 | MFA, PS256 signing keys and 3072-bit key size are stricter than the current text of #9 | Raised by this model (ASVS 5.0 6.3.3, 11.2.3, Appendix C disallows RSASSA-PKCS1-v1_5) | #9 must implement them; local test users may skip MFA in `Development` only |
 | RR-12 | Internal traffic BFF to API may use plain HTTP in local development | Aspire local defaults | HTTPS mandatory outside local (SEC-160) |
+| RR-13 | A compromised API process can forge a `sub` when writing limit changes | The API holds `cr_limit_writer` | Accepted: limited to the limit tables and to the RLS scope of the request; the database `CHECK` and the audit raise the cost, but only an out-of-process approval would remove the risk |
+| RR-14 | An audit event can exist for an action that then failed | Roles use separate connections, so action and audit are not atomic | Accepted: audit first, fail-closed, followed by an outcome event; a crash leaves an event without outcome, never an action without audit |
 
 ## 9. Review triggers
 
