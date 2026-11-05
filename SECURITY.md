@@ -15,3 +15,15 @@ Please do **not** open a public issue. Use GitHub private vulnerability reportin
 - CI blocks merges on: gitleaks, TruffleHog, forbidden files guard. PRs are reviewed by the Claude GitHub App (`@claude review`).
 - No real confidential portfolio data is ever committed: only public open data and synthetic data.
 - Access to figures is filtered by legal entity and business line (least privilege).
+
+## Security documentation
+
+| Document | Content |
+| --- | --- |
+| [Threat model](docs/security/threat-model.md) | STRIDE analysis per trust boundary (TB1-TB7), threats `TM-*` with mitigation, owning issue and abuse-case test, authorization matrix, residual risks |
+| [Data flow diagram](docs/security/data-flow.md) | DFD level 1 (Mermaid), trust boundaries and flows |
+| [ASVS 5.0 L2 checklist](docs/security/asvs-l2-checklist.md) | All OWASP ASVS 5.0 Level 1-2 requirements, `SEC-*` identifiers, evidence and owning issue; PR mini-checklist |
+| [Data classification](docs/security/data-classification.md) | Classes C0 / C1 / C1-PD / C2 / R, storage, logging and export rules, data and crypto inventories, logging inventory |
+| [External sources](docs/security/external-sources.md) | TLS, allowlist, integrity, size limits and safe parsing rules for open data ingestion |
+
+Any pull request that adds a trust boundary, flow, external source, table or key updates these documents.
