@@ -326,7 +326,7 @@ Each item points to the full rows below.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | SEC-162 | 13.1.1 | 2 | Document all communication needs | Yes | [data-flow.md](data-flow.md) and [external-sources.md](external-sources.md) | Review | #4 |
 | SEC-163 | 13.2.1 | 2 | Backend components authenticated without static credentials | Yes | API uses the user's access token; outside local, PostgreSQL with managed identity or vault-rotated credentials (RR-08) | Review | #10, #11, #41 |
-| SEC-164 | 13.2.2 | 2 | Least privilege for backend communications | Yes | One DB role per component (`cr_reader`, `cr_writer`, `cr_migrator`, `cr_audit_writer`) | Test `CrReader_Should_Not_Insert_Update_Delete_Or_Alter` | #11 |
+| SEC-164 | 13.2.2 | 2 | Least privilege for backend communications | Yes | One DB role per permission set, not per component (`cr_reader`, `cr_writer`, `cr_migrator`, `cr_audit_writer`, `cr_audit_reader`, `cr_bff_keys`, `cr_api_keys`); a component holding several roles never merges them | Test `CrReader_Should_Not_Insert_Update_Delete_Or_Alter` | #11 |
 | SEC-165 | 13.2.3 | 2 | No default credentials for services | Yes | Startup validation rejects empty or demo values | Test `Should_Refuse_To_Start_When_Secret_Is_Missing_Or_Default` | #10 |
 | SEC-166 | 13.2.4 | 2 | Allowlist of external resources | Yes | Per-source host allowlist | Test `Should_Reject_Redirect_To_Non_Allowlisted_Host` | #15, #16, #17, #18 |
 | SEC-167 | 13.2.5 | 2 | Server-level outbound allowlist | Yes | Named `HttpClient` per source + egress filtering in deployment | Review | #15, #41 |
