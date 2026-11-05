@@ -78,6 +78,36 @@ public class DispatcherTests
     }
 
     [Fact]
+    public async Task Request_that_is_both_command_and_query_reaches_the_right_handler()
+    {
+        using var provider = BuildProvider();
+        using var scope = provider.CreateScope();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<IDispatcher>();
+        var request = new HybridRequest();
+
+        var viaCommand = await dispatcher.Send(request, TestContext.Current.CancellationToken);
+        var viaQuery = await dispatcher.Query(request, TestContext.Current.CancellationToken);
+
+        viaCommand.Value.ShouldBe("command");
+        viaQuery.Value.ShouldBe("query");
+    }
+
+    [Fact]
+    public async Task Request_with_two_result_types_uses_one_wrapper_per_result_type()
+    {
+        using var provider = BuildProvider();
+        using var scope = provider.CreateScope();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<IDispatcher>();
+        var request = new MixedRequest();
+
+        var viaCommand = await dispatcher.Send(request, TestContext.Current.CancellationToken);
+        var viaQuery = await dispatcher.Query(request, TestContext.Current.CancellationToken);
+
+        viaCommand.Value.ShouldBe(1);
+        viaQuery.Value.ShouldBe("query");
+    }
+
+    [Fact]
     public async Task Validation_error_does_not_echo_the_attempted_value()
     {
         using var provider = BuildProvider();
@@ -189,6 +219,10 @@ public sealed record CancellableQuery : IQuery<int>;
 
 public sealed record TimedOutQuery : IQuery<int>;
 
+public sealed record HybridRequest : ICommand<string>, IQuery<string>;
+
+public sealed record MixedRequest : ICommand<int>, IQuery<string>;
+
 public sealed class LogRecords
 {
     public List<(LogLevel Level, string Message)> Entries { get; } = [];
@@ -237,6 +271,30 @@ internal sealed class NoOpCommandHandler : ICommandHandler<NoOpCommand, Unit>
 {
     public Task<Result<Unit>> Handle(NoOpCommand command, CancellationToken cancellationToken) =>
         Task.FromResult(Result.Success(Unit.Value));
+}
+
+internal sealed class HybridCommandHandler : ICommandHandler<HybridRequest, string>
+{
+    public Task<Result<string>> Handle(HybridRequest command, CancellationToken cancellationToken) =>
+        Task.FromResult(Result.Success("command"));
+}
+
+internal sealed class HybridQueryHandler : IQueryHandler<HybridRequest, string>
+{
+    public Task<Result<string>> Handle(HybridRequest query, CancellationToken cancellationToken) =>
+        Task.FromResult(Result.Success("query"));
+}
+
+internal sealed class MixedCommandHandler : ICommandHandler<MixedRequest, int>
+{
+    public Task<Result<int>> Handle(MixedRequest command, CancellationToken cancellationToken) =>
+        Task.FromResult(Result.Success(1));
+}
+
+internal sealed class MixedQueryHandler : IQueryHandler<MixedRequest, string>
+{
+    public Task<Result<string>> Handle(MixedRequest query, CancellationToken cancellationToken) =>
+        Task.FromResult(Result.Success("query"));
 }
 
 internal sealed class SecretCommandHandler : ICommandHandler<SecretCommand, int>

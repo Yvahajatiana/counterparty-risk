@@ -10,32 +10,30 @@ namespace CounterpartyRisk.SharedKernel.Application.Messaging;
 /// </summary>
 internal sealed class Dispatcher(IServiceProvider serviceProvider) : IDispatcher
 {
-    // Closed wrapper per request type, built once with reflection then reused.
-    private static readonly ConcurrentDictionary<Type, object> Wrappers = new();
+    // Closed wrapper built once with reflection, then reused. The key holds the operation and the result:
+    // one request type may implement both ICommand and IQuery, possibly with different result types.
+    private static readonly ConcurrentDictionary<WrapperKey, object> Wrappers = new();
 
     public Task<Result<TResult>> Send<TResult>(ICommand<TResult> command, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
-        var wrapper = (RequestHandlerWrapper<TResult>)Wrappers.GetOrAdd(
-            command.GetType(),
-            static (type, resultType) => Activator.CreateInstance(
-                typeof(CommandHandlerWrapper<,>).MakeGenericType(type, resultType))!,
-            typeof(TResult));
-
+        var wrapper = GetWrapper<TResult>(command.GetType(), typeof(CommandHandlerWrapper<,>));
         return wrapper.Handle(command, serviceProvider, cancellationToken);
     }
 
     public Task<Result<TResult>> Query<TResult>(IQuery<TResult> query, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
-        var wrapper = (RequestHandlerWrapper<TResult>)Wrappers.GetOrAdd(
-            query.GetType(),
-            static (type, resultType) => Activator.CreateInstance(
-                typeof(QueryHandlerWrapper<,>).MakeGenericType(type, resultType))!,
-            typeof(TResult));
-
+        var wrapper = GetWrapper<TResult>(query.GetType(), typeof(QueryHandlerWrapper<,>));
         return wrapper.Handle(query, serviceProvider, cancellationToken);
     }
+
+    private static RequestHandlerWrapper<TResult> GetWrapper<TResult>(Type requestType, Type operation) =>
+        (RequestHandlerWrapper<TResult>)Wrappers.GetOrAdd(
+            new WrapperKey(requestType, operation, typeof(TResult)),
+            static key => Activator.CreateInstance(key.Operation.MakeGenericType(key.RequestType, key.ResultType))!);
+
+    private readonly record struct WrapperKey(Type RequestType, Type Operation, Type ResultType);
 }
 
 internal abstract class RequestHandlerWrapper<TResult>
