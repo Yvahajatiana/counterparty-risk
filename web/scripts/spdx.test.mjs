@@ -4,7 +4,8 @@ import { describe, it } from 'node:test';
 import { isSpdxAllowed, parseSpdx } from './spdx.mjs';
 
 const ALLOWED = new Set(['MIT', 'ISC', 'Apache-2.0', 'BSD-3-Clause']);
-const allowed = (expression) => isSpdxAllowed(expression, ALLOWED);
+const EXCEPTIONS = new Set(['LLVM-exception']);
+const allowed = (expression) => isSpdxAllowed(expression, ALLOWED, EXCEPTIONS);
 
 describe('isSpdxAllowed', () => {
   it('accepts a single allowed identifier', () => {
@@ -41,10 +42,18 @@ describe('isSpdxAllowed', () => {
     assert.equal(allowed('GPL-3.0-only AND MIT OR AGPL-3.0-only'), false);
   });
 
-  it('evaluates WITH on the base license', () => {
+  it('accepts WITH only for an allowed license and a listed exception', () => {
     assert.equal(allowed('Apache-2.0 WITH LLVM-exception'), true);
+    assert.equal(allowed('GPL-2.0-only WITH LLVM-exception'), false);
     assert.equal(allowed('GPL-2.0-only WITH Classpath-exception-2.0'), false);
     assert.equal(allowed('GPL-2.0-only WITH Classpath-exception-2.0 OR MIT'), true);
+  });
+
+  it('rejects WITH when the exception is not listed', () => {
+    assert.equal(allowed('Apache-2.0 WITH Commons-Clause'), false);
+    assert.equal(allowed('MIT WITH Anything'), false);
+    assert.equal(allowed('MIT AND Apache-2.0 WITH Commons-Clause'), false);
+    assert.equal(isSpdxAllowed('Apache-2.0 WITH LLVM-exception', ALLOWED), false);
   });
 
   it('accepts lowercase operators', () => {

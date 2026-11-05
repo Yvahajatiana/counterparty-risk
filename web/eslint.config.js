@@ -6,34 +6,53 @@ const angular = require('angular-eslint');
 
 // Security rules (Secure by Design, #12): forbid DOM XSS sinks and sanitizer bypasses.
 // Angular sanitization and Trusted Types (`trusted-types angular`) must never be circumvented.
-const FORBIDDEN_TS_SYNTAX = [
-  {
-    selector: 'MemberExpression[property.name=/^(innerHTML|outerHTML)$/]',
-    message: 'innerHTML/outerHTML are forbidden (XSS sink). Use Angular templates and bindings.',
-  },
-  {
-    selector: 'CallExpression[callee.property.name="insertAdjacentHTML"]',
-    message: 'insertAdjacentHTML is forbidden (XSS sink).',
-  },
-  {
-    selector: 'MemberExpression[property.name=/^bypassSecurityTrust/]',
-    message: 'DomSanitizer.bypassSecurityTrust* is forbidden: it disables Angular sanitization.',
-  },
-  {
-    selector: 'CallExpression[callee.object.name="document"][callee.property.name=/^write(ln)?$/]',
+// Each sink is matched in dot form (el.innerHTML) and in computed form (el['innerHTML'],
+// el[`innerHTML`]), whatever the object. A computed key held in a variable cannot be detected.
+const forbidMember = (pattern, message) =>
+  ['property.name', 'property.value', 'property.quasis.0.value.raw'].map((path) => ({
+    selector: `MemberExpression[${path}=/${pattern}/]`,
+    message,
+  }));
+
+const STORAGE_MESSAGE =
+  'Web storage is restricted to UI preferences in core/theme. Never store tokens or business data.';
+
+const FORBIDDEN_DOM_SYNTAX = [
+  ...forbidMember(
+    '^(innerHTML|outerHTML)$',
+    'innerHTML/outerHTML are forbidden (XSS sink). Use Angular templates and bindings.',
+  ),
+  ...forbidMember('^insertAdjacentHTML$', 'insertAdjacentHTML is forbidden (XSS sink).'),
+  ...forbidMember(
+    '^bypassSecurityTrust',
+    'DomSanitizer.bypassSecurityTrust* is forbidden: it disables Angular sanitization.',
+  ),
+  // Any object: this.document.write(...) is the inject(DOCUMENT) idiom.
+  ...['callee.property.name', 'callee.property.value'].map((path) => ({
+    selector: `CallExpression[${path}=/^write(ln)?$/]`,
     message: 'document.write is forbidden.',
+  })),
+  // Renderer2.setProperty/setAttribute(el, name, value) and Element.setAttribute(name, value).
+  {
+    selector:
+      'CallExpression[callee.property.name="setProperty"][arguments.1.value=/^(innerHTML|outerHTML|srcdoc)$/]',
+    message: 'Renderer2.setProperty on innerHTML/outerHTML/srcdoc is forbidden (XSS sink).',
   },
   {
-    selector: 'MemberExpression[property.name=/^(localStorage|sessionStorage)$/]',
-    message:
-      'Web storage is restricted to UI preferences in core/theme. Never store tokens or business data.',
+    selector: 'CallExpression[callee.property.name="setAttribute"][arguments.1.value="srcdoc"]',
+    message: 'Setting the srcdoc attribute is forbidden (XSS sink).',
+  },
+  {
+    selector: 'CallExpression[callee.property.name="setAttribute"][arguments.0.value="srcdoc"]',
+    message: 'Setting the srcdoc attribute is forbidden (XSS sink).',
   },
 ];
 
+const FORBIDDEN_STORAGE_SYNTAX = forbidMember('^(localStorage|sessionStorage)$', STORAGE_MESSAGE);
+
 const FORBIDDEN_GLOBALS = ['localStorage', 'sessionStorage'].map((name) => ({
   name,
-  message:
-    'Web storage is restricted to UI preferences in core/theme. Never store tokens or business data.',
+  message: STORAGE_MESSAGE,
 }));
 
 // Template equivalents: [innerHTML], [outerHTML] and their attribute forms.
@@ -84,7 +103,7 @@ module.exports = defineConfig([
       'no-implied-eval': 'error',
       'no-new-func': 'error',
       'no-script-url': 'error',
-      'no-restricted-syntax': ['error', ...FORBIDDEN_TS_SYNTAX],
+      'no-restricted-syntax': ['error', ...FORBIDDEN_DOM_SYNTAX, ...FORBIDDEN_STORAGE_SYNTAX],
       'no-restricted-globals': ['error', ...FORBIDDEN_GLOBALS],
     },
   },
@@ -92,10 +111,7 @@ module.exports = defineConfig([
     // The only place allowed to use web storage, for UI preferences (theme).
     files: ['src/app/core/theme/theme.service.ts', 'src/app/core/theme/theme.service.spec.ts'],
     rules: {
-      'no-restricted-syntax': [
-        'error',
-        ...FORBIDDEN_TS_SYNTAX.filter((rule) => !rule.selector.includes('localStorage')),
-      ],
+      'no-restricted-syntax': ['error', ...FORBIDDEN_DOM_SYNTAX],
       'no-restricted-globals': 'off',
     },
   },

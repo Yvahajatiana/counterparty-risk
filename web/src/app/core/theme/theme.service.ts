@@ -20,14 +20,12 @@ export class ThemeService {
   readonly mode = signal<ThemeMode>(this.readStoredMode());
 
   constructor() {
+    // Applied synchronously: effects run after the first change detection, too late to avoid a
+    // flash of the wrong theme. The effect only handles later changes.
+    this.apply(this.mode());
     effect(() => {
       const mode = this.mode();
-      const root = this.document.documentElement;
-      if (mode === 'system') {
-        root.removeAttribute('data-theme');
-      } else {
-        root.setAttribute('data-theme', mode);
-      }
+      this.apply(mode);
       this.persist(mode);
     });
   }
@@ -36,6 +34,15 @@ export class ThemeService {
   cycle(): void {
     const next = MODES[(MODES.indexOf(this.mode()) + 1) % MODES.length] ?? 'system';
     this.mode.set(next);
+  }
+
+  private apply(mode: ThemeMode): void {
+    const root = this.document.documentElement;
+    if (mode === 'system') {
+      root.removeAttribute('data-theme');
+    } else {
+      root.setAttribute('data-theme', mode);
+    }
   }
 
   private readStoredMode(): ThemeMode {

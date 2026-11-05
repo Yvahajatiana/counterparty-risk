@@ -57,6 +57,14 @@ describe('ThemeService', () => {
     expect(createService().mode()).toBe('dark');
   });
 
+  it('applies a stored preference synchronously, before any change detection', () => {
+    storage.setItem(STORAGE_KEY, 'dark');
+
+    TestBed.inject(ThemeService);
+
+    expect(root.getAttribute('data-theme')).toBe('dark');
+  });
+
   it('falls back to system on an invalid stored value', () => {
     storage.setItem(STORAGE_KEY, '<script>');
     expect(createService().mode()).toBe('system');

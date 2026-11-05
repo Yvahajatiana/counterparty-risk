@@ -39,11 +39,13 @@ installed and must not be added: they require a commercial licence key.
 
 `npm run check:licenses` (`scripts/check-licenses.mjs`, run in `web-ci.yml`) reads
 `package-lock.json` and fails on any licence outside the allow-list (MIT, ISC, BSD, Apache-2.0,
-0BSD, OFL-1.1, CC0, CC-BY-4.0, BlueOak, Python-2.0, Unlicense). The only exceptions are:
+0BSD, OFL-1.1, CC0, CC-BY-4.0, BlueOak, Python-2.0, Unlicense). SPDX expressions are fully
+evaluated: `OR` needs one allowed branch, `AND` needs all of them, and `WITH` is refused unless the
+exception is listed (`LLVM-exception` only). The only license exceptions are:
 
 | Package | Licence | Justification |
 | --- | --- | --- |
 | `highcharts` | Highsoft proprietary | Non-commercial use only, see above and ADR-001 (#3) |
-| `lightningcss*` (dev only) | MPL-2.0 | Build-time CSS tool used by Tailwind, never shipped in the bundle |
+| `lightningcss`, `lightningcss-*` (dev only, by name) | MPL-2.0 | Build-time CSS tool used by Tailwind, never shipped in the bundle |
 
 Any new exception requires a Lead review and an update of this file.

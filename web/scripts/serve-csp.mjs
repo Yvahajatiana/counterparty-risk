@@ -3,7 +3,7 @@
 // It mimics what the BFF (#10) must do for every request of index.html:
 //   1. generate a fresh random nonce,
 //   2. replace CSP_NONCE_PLACEHOLDER in index.html with it,
-//   3. send the strict CSP header (script hashes come from the autoCsp <meta> tag).
+//   3. send the strict CSP header documented in web/README.md.
 //
 // Usage: npm run build && npm run serve:csp  (then open http://127.0.0.1:4300)
 // Development tool only: binds to the loopback interface, never deploy it.
@@ -29,13 +29,12 @@ const MIME = {
 };
 
 const indexTemplate = await readFile(join(ROOT, 'index.html'), 'utf8');
-const scriptHashes = [...indexTemplate.matchAll(/'sha256-[A-Za-z0-9+/=]+'/g)].map((m) => m[0]);
 
 /** Target policy documented in web/README.md, to be enforced by the BFF (#10). */
-export function buildCsp(nonce) {
+function buildCsp(nonce) {
   return [
     "default-src 'self'",
-    `script-src 'self' ${scriptHashes.join(' ')}`,
+    "script-src 'self'",
     `style-src 'self' 'nonce-${nonce}'`,
     "font-src 'self'",
     "img-src 'self' data:",
@@ -61,9 +60,25 @@ function sendIndex(res) {
   res.end(html);
 }
 
+function sendText(res, status, message) {
+  res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8' });
+  res.end(message);
+}
+
+/** Maps the request URL to a path on disk. Throws on a malformed URL or percent-encoding. */
+function resolveRequestPath(rawUrl) {
+  const url = new URL(rawUrl ?? '/', `http://${HOST}`);
+  return normalize(join(ROOT, decodeURIComponent(url.pathname)));
+}
+
 const server = createServer(async (req, res) => {
-  const url = new URL(req.url ?? '/', `http://${HOST}`);
-  const filePath = normalize(join(ROOT, decodeURIComponent(url.pathname)));
+  let filePath;
+  try {
+    filePath = resolveRequestPath(req.url);
+  } catch {
+    sendText(res, 400, 'Bad request');
+    return;
+  }
   // Reject path traversal outside the build output.
   if (!filePath.startsWith(ROOT + sep)) {
     sendIndex(res);
@@ -80,8 +95,7 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': type, 'X-Content-Type-Options': 'nosniff' });
     res.end(body);
   } catch {
-    res.writeHead(404, { 'Content-Type': 'text/plain' });
-    res.end('Not found');
+    sendText(res, 404, 'Not found');
   }
 });
 

@@ -47,6 +47,13 @@
       container-shape: 0,
     )
   );
+  // Compact navigation: body-medium instead of the default body-large.
+  @include mat.list-overrides(
+    (
+      list-item-label-text-size: var(--mat-sys-body-medium-size),
+      list-item-label-text-line-height: var(--mat-sys-body-medium-line-height),
+    )
+  );
 
   width: var(--cr-sidenav-width);
   border-right: 1px solid var(--cr-color-border);

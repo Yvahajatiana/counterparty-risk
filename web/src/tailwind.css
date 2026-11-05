@@ -10,9 +10,9 @@
 @layer theme, base, components, utilities;
 
 @import 'tailwindcss/theme.css' layer(theme);
-@import 'tailwindcss/utilities.css' layer(utilities);
+@import 'tailwindcss/utilities.css' layer(utilities) source(none);
 
-/* Restrict class scanning to the application sources. */
+/* Automatic detection is off (source(none)): only the application sources are scanned. */
 @source './app';
 
 @theme inline {

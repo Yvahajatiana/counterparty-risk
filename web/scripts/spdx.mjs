@@ -73,26 +73,30 @@ export function parseSpdx(expression) {
   return ast;
 }
 
-function evaluate(node, allowed) {
+function evaluate(node, allowed, allowedExceptions) {
   switch (node.type) {
     case 'OR':
-      return node.branches.some((branch) => evaluate(branch, allowed));
+      return node.branches.some((branch) => evaluate(branch, allowed, allowedExceptions));
     case 'AND':
-      return node.branches.every((branch) => evaluate(branch, allowed));
+      return node.branches.every((branch) => evaluate(branch, allowed, allowedExceptions));
     default:
-      // An exception (WITH) only grants extra permissions: the base license decides.
-      return allowed.has(node.id);
+      // WITH can change the terms of the base license (e.g. Commons-Clause restricts it), so an
+      // exception is only accepted when it is explicitly listed.
+      return (
+        allowed.has(node.id) &&
+        (node.exception === undefined || allowedExceptions.has(node.exception))
+      );
   }
 }
 
 /**
  * True when the expression can be satisfied with allowed licenses only:
- * OR needs at least one allowed branch, AND needs every branch allowed.
- * Invalid or non-SPDX values (e.g. a URL) are rejected.
+ * OR needs at least one allowed branch, AND needs every branch allowed, and WITH needs both the
+ * license and the exception allowed. Invalid or non-SPDX values (e.g. a URL) are rejected.
  */
-export function isSpdxAllowed(expression, allowed) {
+export function isSpdxAllowed(expression, allowed, allowedExceptions = new Set()) {
   try {
-    return evaluate(parseSpdx(expression), allowed);
+    return evaluate(parseSpdx(expression), allowed, allowedExceptions);
   } catch {
     return false;
   }

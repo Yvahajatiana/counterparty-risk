@@ -23,16 +23,19 @@ const ALLOWED = new Set([
   'Unlicense',
 ]);
 
-// Weak copyleft accepted only for build-time tools that are never shipped in the bundle
-// (e.g. lightningcss, used by Tailwind CSS at build time).
-const ALLOWED_DEV_ONLY = new Set(['MPL-2.0']);
+// SPDX exceptions accepted after a WITH operator. Anything else is refused, because an exception
+// can restrict the base license (e.g. Commons-Clause).
+const ALLOWED_EXCEPTIONS = new Set(['LLVM-exception']);
+
+// Weak copyleft accepted only for lightningcss, a build-time tool of Tailwind CSS that is never
+// shipped in the bundle. It does not extend to other development dependencies.
+const BUILD_TOOL_PACKAGES = /^lightningcss(-.+)?$/;
+const ALLOWED_FOR_BUILD_TOOLS = new Set([...ALLOWED, 'MPL-2.0']);
 
 // Documented exceptions: package name -> reason (see THIRD_PARTY_LICENSES.md).
 const EXCEPTIONS = new Map([
   ['highcharts', 'Highsoft proprietary license: free for non-commercial use only (ADR-001, #3)'],
 ]);
-
-const ALLOWED_FOR_DEV = new Set([...ALLOWED, ...ALLOWED_DEV_ONLY]);
 
 const lock = JSON.parse(await readFile(resolve(ROOT, 'package-lock.json'), 'utf8'));
 const violations = [];
@@ -47,7 +50,8 @@ for (const [path, meta] of Object.entries(lock.packages ?? {})) {
     continue;
   }
   // Full SPDX evaluation: OR needs one allowed branch, AND needs all of them (see spdx.mjs).
-  if (!isSpdxAllowed(license, meta.dev ? ALLOWED_FOR_DEV : ALLOWED)) {
+  const allowed = meta.dev && BUILD_TOOL_PACKAGES.test(name) ? ALLOWED_FOR_BUILD_TOOLS : ALLOWED;
+  if (!isSpdxAllowed(license, allowed, ALLOWED_EXCEPTIONS)) {
     violations.push(`${name}@${meta.version}: ${license ?? 'UNKNOWN'}${meta.dev ? ' (dev)' : ''}`);
   }
 }

@@ -64,6 +64,9 @@ non-text elements; for text, use `--cr-color-text` or `--cr-color-text-muted` (4
 
 ### Tailwind and Material
 
+The root font size stays at the browser default (100 %), so the browser text-size setting is
+respected; compactness comes from density -2 and component typography overrides.
+
 Tailwind is for layout only (grid, flex, spacing). Its preflight is not loaded, and all its rules
 live in cascade layers: unlayered Material styles always win, so a utility can never break a
 Material component. Style Material components with their `mat.*-overrides()` mixins, not with
@@ -72,7 +75,8 @@ Tailwind classes.
 ## Security rules
 
 - **No DOM XSS sinks.** ESLint fails on `innerHTML`, `outerHTML`, `insertAdjacentHTML`,
-  `document.write`, `bypassSecurityTrust*`, `eval`, `new Function`, `[innerHTML]` /
+  `document.write` (on any object), `bypassSecurityTrust*`, `Renderer2.setProperty` on these
+  sinks, their computed forms (`el['innerHTML']`), `eval`, `new Function`, `[innerHTML]` /
   `[outerHTML]` / `[srcdoc]` bindings and inline styles in templates.
 - **No sensitive data in web storage.** `localStorage` / `sessionStorage` are forbidden by
   ESLint everywhere except `core/theme`, which stores the theme preference only. Tokens stay in
