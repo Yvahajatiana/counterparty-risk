@@ -1,0 +1,9 @@
+{
+  "platformOptions": {
+    "Coverlet": {
+      "include": "[CounterpartyRisk.Architecture.Tests.NoInstrumentation]*",
+      "exclude": "[*]*",
+      "format": "cobertura"
+    }
+  }
+}

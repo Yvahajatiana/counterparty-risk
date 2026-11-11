@@ -1,5 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <!-- No instrumentation here: Coverlet rewrites the inspected assemblies and the IL-based
+         dependency rules would then see its tracker types (false failures). -->
+    <CoverageConfigFile>$(MSBuildProjectDirectory)/coverlet.testconfig.json</CoverageConfigFile>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="NetArchTest.Rules" />
   </ItemGroup>
