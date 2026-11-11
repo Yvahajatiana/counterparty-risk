@@ -125,7 +125,7 @@ Service identities and their exact rights are defined in [data-flow.md](data-flo
 | Id | STRIDE | Threat (concrete example) | Sev. | Mitigation | Requirements | Ticket | Abuse-case test |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | TM-TB4-01 | I | RLS bypass: new table without policy, view without `security_invoker`, role with `BYPASSRLS`, scope variable leaking across pooled connections | High | `ENABLE` + `FORCE ROW LEVEL SECURITY`, `WITH CHECK`, `set_config(..., true)` scoped to the transaction, fail-closed when unset, tests on `pg_class.relrowsecurity` and view options | SEC-108, SEC-212 | #11, #43 | `Should_Return_Zero_Rows_When_Scope_Is_Not_Set`, `All_Tables_With_LegalEntityId_Should_Have_Forced_Rls` |
-| TM-TB4-02 | E | A compromised API process writes or alters data, or runs DDL | High | One identity per permission set (data-flow.md): `cr_reader` SELECT only; the only business write roles of the API are `cr_limit_writer`, limited to the limit tables and subject to RLS `WITH CHECK`, and `cr_governance_writer` (F33), limited to the method version, approval, active pointer and job request tables of `meta`, without access to `calc`; `cr_writer` for workers only; `cr_migrator` only for the migration bundle; no `SUPERUSER` / `BYPASSRLS`; the API never migrates | SEC-164 | #11, #27 | `CrReader_Should_Not_Insert_Update_Delete_Or_Alter`, `CrLimitWriter_Should_Not_Write_Outside_Limit_Tables`, `CrGovernanceWriter_Should_Not_Write_Outside_Governance_Tables`, `Should_Reject_Limit_Change_Outside_Scope` |
+| TM-TB4-02 | E | A compromised API process writes or alters data, or runs DDL | High | One identity per permission set (data-flow.md): `cr_reader` SELECT only; the only business write roles of the API are `cr_limit_writer`, limited to the limit tables and subject to RLS `WITH CHECK`, and `cr_governance_writer` (F33), limited to the method version, approval, active pointer, history correction and job request tables of `meta`, without access to `calc`; `cr_writer` for workers only; `cr_migrator` only for the migration bundle; no `SUPERUSER` / `BYPASSRLS`; the API never migrates | SEC-164 | #11, #27 | `CrReader_Should_Not_Insert_Update_Delete_Or_Alter`, `CrLimitWriter_Should_Not_Write_Outside_Limit_Tables`, `CrGovernanceWriter_Should_Not_Write_Outside_Governance_Tables`, `Should_Reject_Limit_Change_Outside_Scope` |
 | TM-TB4-03 | T / R | Audit trail tampering (update, delete, truncation), including by a PostgreSQL superuser who recomputes the chain | High | `cr_audit_writer` limited to INSERT and column-level `SELECT (seq, hash)` to chain the previous hash, trigger rejecting UPDATE / DELETE; **keyed** chain `HMAC-SHA-256(key, prev_hash ‖ row)` with the key in the vault, outside PostgreSQL; chain head (`seq`, HMAC) anchored every hour in an append-only store of a separate trust domain by an append-only publisher identity (F20); scheduled verification reads the events with `cr_audit_verifier` (F23) and the anchors with a separate read-only identity (F21), compares them with the recomputed chain and raises an alert. Detects: any modification, deletion, insertion or truncation of rows up to the last anchor, even by a DBA (who cannot recompute the HMAC without the key). Does not detect: truncation of events written after the last anchor (window <= 1 h), or forged events appended by a compromised audit writer that holds the key | SEC-208 | #10 | `Should_Detect_Broken_Audit_Chain_At_Exact_Sequence`, `Should_Detect_Recomputed_Chain_Against_External_Anchor`, `CrAuditWriter_Should_Only_Read_Seq_And_Hash`, `CrAuditVerifier_Should_Only_Read_Audit_Events` |
 | TM-TB4-04 | I | Database credentials leaked (repository, logs, image) or connection without TLS | High | Secrets store, no password in `appsettings`, `SSL Mode=VerifyFull` outside local, startup validation | SEC-158, SEC-163, SEC-168 | #10, #11 | `Appsettings_Should_Not_Contain_Secrets` |
 | TM-TB4-05 | I | Amounts, LEIs or SQL parameters written to logs | Medium | No `EnableSensitiveDataLogging`, `LogParameters=false`, `Include Error Detail=false` outside `Development` | SEC-202 | #10, #11 | - |
@@ -206,7 +206,7 @@ Count: **75 threats** (TB1: 10, TB2: 9, TB3: 15, TB4: 15, TB5: 11, TB6: 6, TB7: 
 
 Validated by the Expert CCR in the review of PR #48; the governance capabilities (method versions, job runs,
 data quality detail) were validated by the Expert CCR in #52, after the PO decision of 2026-11-05 that the
-switch to a new method is approved by the direction and is no longer automatic. Any change requires a new
+switch to a new method is approved by the direction and is no longer automatic; the PO validated the targeted history correction the same day. Any change requires a new
 business review.
 The matrix is coded in one tested `Policies` class (#9) and enforced by the API (#31). Data scope (legal
 entities, business lines) applies on top of every capability; an empty scope returns 403.
@@ -229,6 +229,8 @@ entities, business lines) applies on top of every capability; an empty scope ret
 | `ManageMethodVersions` | `PublishMethodVersionCommand` (version identifier only), resume of an interrupted history recalculation, rollback request to a `Retired` version (#26; rule R9) | **Yes** | No | No | No | No | No |
 | `ApproveMethodVersion` | `ApproveMethodVersionActivationCommand`: approve or reject a version `PendingApproval`, approve a rollback (#26; rule R9) | No | No | **Yes** | No | No | No |
 | `ManageJobRuns` | Manual run of a job from a closed list, last as-of date or failed run only (#19; rule R10) | **Yes** | No | No | No | No | No |
+| `ManageHistoryCorrections` | `RequestHistoryCorrectionCommand`: request the targeted recalculation of one as-of date of the active version after the correction of a closed snapshot (#26; rule R13) | **Yes** | No | No | No | No | No |
+| `ApproveHistoryCorrection` | `ApproveHistoryCorrectionCommand`: approve or reject a pending history correction (#26; rule R13) | No | No | **Yes** | No | No | No |
 | `ReadDataQualityDetail` | `/data-quality/status`, `/data-quality/runs` and other `/data-quality/*` detail endpoints (#19; rule R11) | Yes | No | Yes | Yes | No | **Yes (reduced view, R11)** |
 
 The full history recalculation has no capability of its own: it is started by the publication of a version and
@@ -251,7 +253,8 @@ to every user who can read the widget; only the detail requires `ReadDataQuality
 | R9 | Method versions, four eyes: publisher (`ManageMethodVersions`) != approver (`ApproveMethodVersion`) on `sub`, in the handler and by a database `CHECK`. The publish command carries only a version identifier; the definition comes from the code catalogue and is checked by `parameters_sha256` (TM-TB3-14). Status flow `Computing` -> `PendingApproval` -> `Active` or `Rejected`; no result of a version is visible before its approval. After approval the pointer `meta.active_method_version` switches in a single transaction and the previous version becomes `Retired`; its results are kept, so a rollback is a new four-eyes request on that `Retired` version. Approval is refused when a step of the regulatory calendar falls after `regulatory_reference_date` (ADR-002 §14). | `Should_Return403_When_Publisher_Approves_Own_Method_Version`, `Should_Not_Return_Results_Of_Version_PendingApproval`, `Should_Refuse_Approval_When_Regulatory_Step_Crossed`, `Should_Require_Approval_For_Rollback` |
 | R10 | Manual job runs (`ManageJobRuns`): closed list of job codes defined in code, target limited to the last as-of date or to a failed run, no free parameter, `HistoryRecalculationJob` excluded; the command only queues a request (TM-TB3-08). No four eyes, but every request is audited. | `Should_Return400_When_Manual_Run_Targets_HistoryRecalculationJob`, `Should_Return400_When_Manual_Run_Has_Free_Parameter` |
 | R11 | `ReadDataQualityDetail` for the auditor: aggregated view only (run, rule, status, counts), without any counterparty or trade identifier, monetary values masked (fields not returned by the API). Other roles get the detail within their data scope. | `Should_Return_Aggregated_Data_Quality_View_To_Auditor`, `Should_Not_Return_Counterparty_Identifier_To_Auditor` |
-| R12 | Conditions on the governance capabilities (`ManageMethodVersions`, `ApproveMethodVersion`, `ManageJobRuns`): the effective data scope must cover every legal entity, since a method version or a job affects all of them (section 7.4); the audit event is written before the action and refuses it if it fails (fail-closed). | `Should_Return403_When_Governance_Scope_Does_Not_Cover_All_Entities`, `Should_Refuse_Governance_Command_When_Audit_Fails` |
+| R12 | Conditions on the governance capabilities (`ManageMethodVersions`, `ApproveMethodVersion`, `ManageJobRuns`, `ManageHistoryCorrections`, `ApproveHistoryCorrection`): the effective data scope must cover every legal entity, since a method version, a job or a history correction affects all of them (section 7.4); the audit event is written before the action and refuses it if it fails (fail-closed). | `Should_Return403_When_Governance_Scope_Does_Not_Cover_All_Entities`, `Should_Refuse_Governance_Command_When_Audit_Fails` |
+| R13 | History corrections, four eyes (PO decision of 2026-11-05): requester (`ManageHistoryCorrections`) != approver (`ApproveHistoryCorrection`) on `sub`, in the handler and by a database `CHECK`. The request names one as-of date of the active method version and a reason code from a closed list, no free parameter; it is accepted only once the corrected snapshot is closed with a new `inputs_sha256`. Status flow `PendingApproval` -> `Approved` or `Rejected`; only after approval is the recalculation of that date queued for the scheduler (no computation in the request, TM-TB3-08), with the same version. A **mandatory W12 annotation** (`meta.risk_event`, type `HistoryCorrection`: date, reason code, requester, approver) is written with the approval; the corrected point is never shown without it. Request, approval and outcome are audited, fail-closed. | `Should_Return403_When_Requester_Approves_Own_History_Correction`, `Should_Not_Queue_Correction_Before_Approval`, `Should_Annotate_W12_When_History_Correction_Is_Approved` |
 
 ### 7.3 Incompatible role pairs (segregation of duties)
 
@@ -264,7 +267,7 @@ that the incompatible-pairs table is loaded and non-empty, and refuses to start 
 | `ccr-limit-admin` | `ccr-front-office` | The front office never modifies a limit it consumes |
 | `ccr-limit-admin` | `ccr-risk-manager` | The limit administrator is distinct from the risk manager |
 | `ccr-limit-admin` | `ccr-direction` | The approver of a limit change is never its maker |
-| `ccr-risk-manager` | `ccr-direction` | The publisher of a method version is never its approver (rule R9) |
+| `ccr-risk-manager` | `ccr-direction` | The publisher of a method version or requester of a history correction is never its approver (rules R9, R13) |
 | `ccr-front-office` | `ccr-risk-manager` | The front office never publishes the method that measures its own risk, nor runs jobs |
 | `ccr-front-office` | `ccr-direction` | The front office never approves a method version or a limit change |
 | `ccr-auditor` | Any business role (`ccr-risk-manager`, `ccr-front-office`, `ccr-direction`, `ccr-finance`, `ccr-limit-admin`) | Independence of the audit function |
@@ -287,7 +290,7 @@ account with a wildcard (`*`) scope is rejected (`Should_Return403_When_FrontOff
 
 Conditions on the governance capabilities (rule R12):
 
-- `ManageMethodVersions`, `ApproveMethodVersion` and `ManageJobRuns` require an effective scope covering
+- `ManageMethodVersions`, `ApproveMethodVersion`, `ManageJobRuns`, `ManageHistoryCorrections` and `ApproveHistoryCorrection` require an effective scope covering
   **every legal entity**: a risk manager with assigned entities only gets 403. The check is done by the API on the
   token scope, never on a client filter.
 - Every governance command is audited before it runs; if the audit write fails, the command is refused
@@ -307,16 +310,10 @@ returning 403 to the auditor.
 | `/csp-report` | Anonymous | Rate limited, size limited, logged (#10) |
 | `/bff/user`, `/bff/logout` | Any authenticated user | Minimal profile, antiforgery on logout (#9) |
 | Health endpoints | Internal network only | No business data (#7) |
-| Targeted recalculation of one as-of date after the correction of a closed snapshot (#26) | **Denied to every role** | Pending PO decision |
 
-The publication of a method version, the history recalculation, the manual job runs and the `/data-quality/*`
+The publication of a method version, the history recalculation, the targeted history correction, the manual job runs and the `/data-quality/*`
 detail endpoints now have validated capabilities (section 7.1, #52); the "admin" and "data-steward" roles once
 cited by #19 and #26 do not exist and are not created.
-
-The targeted recalculation stays denied by default until the PO decides. The Expert CCR proposal, not yet
-applied, is `ManageHistoryCorrections` (risk manager) and `ApproveHistoryCorrection` (direction), four eyes,
-with an annotation in W12. Enabling it requires a new row in 7.1 and, for a write, a dedicated identity in
-[data-flow.md](data-flow.md#identities).
 
 ### 7.6 References
 

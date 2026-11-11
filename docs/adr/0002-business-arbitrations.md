@@ -44,7 +44,8 @@ Toute modification passe par une PR revue par le Lead et l'Expert CCR, crée une
 - cycle de vie : `Computing` → `PendingApproval` (recalcul complet et contrôles DQ réussis) → `Active` ou `Rejected` ; `Retired` pour l'ancienne version active. Aucun résultat d'une version n'est visible avant son approbation ;
 - la bascule n'est **plus automatique** : `ApproveMethodVersionActivationCommand` (capacité `ApproveMethodVersion`, direction), avec un `sub` différent de celui de la publication (quatre yeux). Après approbation, le pointeur `meta.active_method_version` bascule en une seule transaction ; `cr_scheduler` n'a aucun droit d'écriture sur ce pointeur ;
 - les résultats des versions `Retired` sont conservés ; le retour arrière vers une version `Retired` suit le même circuit à quatre yeux ;
-- règles d'autorisation et menaces : threat model §7.1, règles R9 à R12, TM-TB3-14 et TM-TB3-15.
+- **recalcul ciblé après correction d'un snapshot** (décision du PO du 2026-11-05) : `RequestHistoryCorrectionCommand` (capacité `ManageHistoryCorrections`, risk manager) porte une date d'arrêté de la version active et un code motif issu d'une liste fermée, sans paramètre libre, une fois le snapshot corrigé clôturé avec un nouvel `inputs_sha256`. `ApproveHistoryCorrectionCommand` (capacité `ApproveHistoryCorrection`, direction, `sub` différent du demandeur) l'approuve ou la rejette ; seule l'approbation met en file le recalcul de cette date, à version constante, exécuté par le scheduler. L'approbation crée une **annotation obligatoire dans W12** (`meta.risk_event` de type `HistoryCorrection` : date, motif, demandeur, approbateur) : un point corrigé n'est jamais affiché sans elle ;
+- règles d'autorisation et menaces : threat model §7.1, règles R9 à R13, TM-TB3-14 et TM-TB3-15.
 
 ### 1. Gross Commitment, y compris les financements
 
@@ -293,7 +294,7 @@ Le même seuil d'alerte (défaut 80 %) s'applique au ratio grands risques rappor
 - #23 : BA-CVA (M_NS corrigée, périmètre art. 382, CVA exemptée notionnelle), output floor du §12, section CCF du `RegulatoryParameterSet`.
 - #24 : CVA et DVA seulement, DVA comptable, contributions CVA additives, libellé PD proxy.
 - #25 : Euler du §5.
-- #26 : annotations W12, `regulatory_reference_date`, versioning ; catalogue de versions, commande de publication réduite à un identifiant, approbation à quatre yeux et refus d'approbation après une marche du calendrier (#52).
+- #26 : annotations W12, `regulatory_reference_date`, versioning ; catalogue de versions, commande de publication réduite à un identifiant, approbation à quatre yeux et refus d'approbation après une marche du calendrier ; recalcul ciblé après correction d'un snapshot en quatre yeux, avec annotation W12 de type `HistoryCorrection` (#52).
 - #19 : `ManageJobRuns` et `ReadDataQualityDetail` (#52).
 - #27 : mesure du §10 et seuils du §13. #30 et #36 : grands risques du §11.
 - #28 : catalogue du §8. #29 : désignation exclusive des CDS.
@@ -333,7 +334,7 @@ L'Expert CCR a relu les articles sur des sources secondaires (texte consolidé r
 
 - Issue #6 : proposition du Lead, validation de l'Expert CCR, décisions du PO du 2026-11-04, note sur les critères caducs.
 - Issue #45 : spécification des financements et réponses de l'Expert CCR.
-- Issue #52 : gouvernance des versions de méthode (décision du PO du 2026-11-05, capacités validées par l'Expert CCR). Limites : aucun texte consulté n'impose ces rôles ni les quatre yeux sur une version de méthode (hypothèse du projet) ; les art. 286 à 288 du CRR relèvent de l'IMM (analogie) et ont été lus sur une version britannique, à confronter à EUR-Lex ; l'art. 76(5) de la CRD n'est pas vérifié.
+- Issue #52 : gouvernance des versions de méthode et recalcul ciblé (décisions du PO du 2026-11-05, capacités validées par l'Expert CCR). Limites : aucun texte consulté n'impose ces rôles ni les quatre yeux sur une version de méthode (hypothèse du projet) ; les art. 286 à 288 du CRR relèvent de l'IMM (analogie) et ont été lus sur une version britannique, à confronter à EUR-Lex ; l'art. 76(5) de la CRD n'est pas vérifié.
 - [Règlement (UE) 2024/1623 (CRR3) – EUR-Lex](https://eur-lex.europa.eu/eli/reg/2024/1623/oj), [Règlement (UE) 2019/876 (CRR2) – EUR-Lex](https://eur-lex.europa.eu/eli/reg/2019/876/oj), [Règlement (UE) n° 575/2013 (CRR) – EUR-Lex](https://eur-lex.europa.eu/eli/reg/2013/575/oj).
 - [BCBS MAR50](https://www.bis.org/basel_framework/chapter/MAR/50.htm), [BCBS d588](https://www.bis.org/bcbs/publ/d588.htm).
 - [Tasche, « Capital Allocation to Business Units and Sub-Portfolios: the Euler Principle »](https://arxiv.org/abs/0708.2542).

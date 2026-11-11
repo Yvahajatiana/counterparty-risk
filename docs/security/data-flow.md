@@ -129,7 +129,7 @@ role has `SUPERUSER` or `BYPASSRLS`, and none has `UPDATE`, `DELETE` or `TRUNCAT
 | `cr_migrator` | Migration bundle only | F14 | Member of `cr_owner`: DDL, grants, RLS policies | n/a | #11 |
 | `cr_reader` | API | F8 | `SELECT` on `ref`, `portfolio`, `financing`, `market`, `bench`, `calc`, `reporting`, `meta` | User scope | #11 |
 | `cr_limit_writer` | API (`ManageLimits`, `ApproveLimitChange`, `ManageLimitThresholds`) | F22 | `SELECT`, `INSERT` on `portfolio.limit_change_request`; `SELECT`, `UPDATE` on `portfolio.limit`; `SELECT`, `INSERT` on `portfolio.threshold_policy`; no `DELETE` | User scope, `WITH CHECK` | #11, #27 |
-| `cr_governance_writer` | API (`ManageMethodVersions`, `ApproveMethodVersion`, `ManageJobRuns`) | F33 | `SELECT`, `INSERT` on `meta.method_version` and `meta.method_version_approval`; `UPDATE` of the status columns of `meta.method_version` only; `UPDATE` on `meta.active_method_version`; `SELECT`, `INSERT` on `meta.job_run_request`; no `DELETE`, no access to `calc` | Explicit all-entities scope, required by rule R12 | #11, #19, #26 |
+| `cr_governance_writer` | API (`ManageMethodVersions`, `ApproveMethodVersion`, `ManageJobRuns`, `ManageHistoryCorrections`, `ApproveHistoryCorrection`) | F33 | `SELECT`, `INSERT` on `meta.method_version` and `meta.method_version_approval`; `UPDATE` of the status columns of `meta.method_version` only; `UPDATE` on `meta.active_method_version`; `SELECT`, `INSERT` on `meta.job_run_request`; `SELECT`, `INSERT` and status `UPDATE` on `meta.history_correction_request`; `INSERT` on `meta.risk_event` (type `HistoryCorrection` only); no `DELETE`, no access to `calc` | Explicit all-entities scope, required by rule R12 | #11, #19, #26 |
 | `cr_audit_writer` | API, BFF | F9, F25 | `INSERT` on `audit.audit_event`; column-level `SELECT (seq, hash)` to read the previous hash of the chain | None (no RLS on `audit`) | #10, #11 |
 | `cr_audit_reader` | API (`ReadAudit` endpoint only) | F24 | `SELECT` on `audit.audit_event` | None; access controlled by `ReadAudit` | #10, #11 |
 | `cr_audit_verifier` | Audit verification job only | F23 | `SELECT` on `audit.audit_event`; distinct from `cr_audit_reader` | None | #10, #11 |
@@ -137,7 +137,7 @@ role has `SUPERUSER` or `BYPASSRLS`, and none has `UPDATE`, `DELETE` or `TRUNCAT
 | `cr_bff_keys` | BFF | F10 | `SELECT`, `INSERT` on `dpkeys.bff_key` | n/a | #9, #11 |
 | `cr_bff_session` | BFF | F26 | `SELECT`, `INSERT`, `UPDATE`, `DELETE` on `session.ticket` only (sliding expiry, revocation) | n/a | #9, #11 |
 | `cr_writer` | Workers (ingestion, generators, engines, projections) | F13 | `SELECT`, `INSERT`, `UPDATE` on `ref`, `portfolio`, `market`, `bench`, `calc`, `reporting` and the run tables of `meta`; `INSERT` only on `financing`; `DELETE` / `TRUNCATE` on `staging` only | Explicit all-entities scope (#26) | #11 |
-| `cr_scheduler` | Quartz | F27 | Read / write on schema `quartz`, `meta.ingestion_run`; `SELECT` and status `UPDATE` on `meta.job_run_request`; no write on `meta.method_version` or `meta.active_method_version` | n/a | #11, #19 |
+| `cr_scheduler` | Quartz | F27 | Read / write on schema `quartz`, `meta.ingestion_run`; `SELECT` and status `UPDATE` on `meta.job_run_request`, `SELECT` on approved `meta.history_correction_request`; no write on `meta.method_version` or `meta.active_method_version` | n/a | #11, #19 |
 | `cr_partition_job` | Partition and retention jobs | F28 | `EXECUTE` on `meta.ensure_partitions` and `meta.purge_partitions` only, no direct DDL; the purge excludes `audit` | n/a | #11, #19, #26 |
 | `cr_keycloak` | Keycloak | F29 | Owner of the separate Keycloak database; no access to the application database | n/a | #9 |
 | `anchor-publisher` | Audit verification job | F20 | Append only on the anchor store: no read, no delete | n/a | #10, #41 |
@@ -152,7 +152,7 @@ database identities as follows. Every API call also uses `cr_audit_writer` when 
 | `ReadExposure`, `ReadLimits`, `ReadCva`, `ReadRiskOversight`, `ReadCapital`, `ReadMarketAndBenchmark`, `Export` | `cr_reader` | F8 |
 | `ManageLimits`, `ApproveLimitChange`, `ManageLimitThresholds` | `cr_limit_writer` | F22 |
 | `ReadAudit` | `cr_audit_reader` | F24 |
-| `ManageMethodVersions`, `ApproveMethodVersion`, `ManageJobRuns` | `cr_governance_writer` | F33 |
+| `ManageMethodVersions`, `ApproveMethodVersion`, `ManageJobRuns`, `ManageHistoryCorrections`, `ApproveHistoryCorrection` | `cr_governance_writer` | F33 |
 | `ReadDataQualityDetail` | `cr_reader` | F8 |
 
 Separate connections cannot share a transaction, so a sensitive action and its audit event are not atomic. The
@@ -195,7 +195,7 @@ outcome.
 | F30 | BFF, API, workers, migration job | Vault | Own secrets and keys (C2) | HTTPS, service identity | TB4 | TM-TB4-04, -10 |
 | F31 | BFF, API, workers | Collector | Logs and traces (C1, no secret) | OTLP over TLS | TB4 | TM-TB4-05, -11 |
 | F32 | Keycloak administrator | Keycloak | Admin console: accounts, roles, sessions (C1-PD, C2) | HTTPS, internal network | TB2 | TM-TB2-04, -07, -09 |
-| F33 | API | PostgreSQL | Method version publications, approvals and rejections, active version pointer, queued job run requests (C1-PD for publisher and approver, C1) | PostgreSQL over TLS | TB4 | TM-TB3-08, -14, -15, TM-TB4-02 |
+| F33 | API | PostgreSQL | Method version publications, approvals and rejections, active version pointer, history correction requests and their W12 annotation, queued job run requests (C1-PD for publisher and approver, C1) | PostgreSQL over TLS | TB4 | TM-TB3-08, -14, -15, TM-TB4-02 |
 
 ## Rules for evolving this diagram
 
