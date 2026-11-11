@@ -1,0 +1,40 @@
+<app-widget-header [widget]="widget" [quality]="data.value()?.quality" />
+<app-load-state [loading]="data.isLoading()" [error]="data.error()" />
+
+@if (data.value(); as d) {
+  <div class="grid gap-4 xl:grid-cols-2">
+    <section class="cr-card" aria-labelledby="ccr">
+      <h2 id="ccr" class="cr-section-title">CCR: from gross MtM to replacement cost</h2>
+      <p class="cr-text-muted">
+        Derivatives and SFT. Gross notional {{ d.ccr.grossNotional | millions }} EUR (volume only,
+        not an exposure).
+      </p>
+      @if (ccrChart(); as options) {
+        <app-chart [options]="options" label="CCR exposure waterfall, in EUR millions" />
+      }
+    </section>
+
+    <section class="cr-card" aria-labelledby="financing">
+      <h2 id="financing" class="cr-section-title">Financing: from drawn to EAD</h2>
+      <p class="cr-text-muted">
+        Credit risk (CRR3 standardised approach, art. 111), shown separately from CCR. Total
+        commitment
+        {{ d.financing.totalCommitment | millions }} EUR, undrawn
+        {{ d.financing.undrawn | millions }} EUR.
+      </p>
+      @if (financingChart(); as options) {
+        <app-chart [options]="options" label="Financing exposure waterfall, in EUR millions" />
+      }
+    </section>
+  </div>
+
+  <section class="cr-card mt-4" aria-labelledby="table">
+    <h2 id="table" class="cr-section-title">CCR exposure by counterparty (EUR)</h2>
+    <app-data-grid
+      [rows]="d.rows"
+      [columns]="columns"
+      [getRowId]="rowId"
+      label="CCR exposure by counterparty"
+    />
+  </section>
+}

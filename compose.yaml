@@ -1,0 +1,26 @@
+# Demo stack (front-end driven development): Angular + BFF on synthetic data.
+#   docker compose up --build -d   then open http://localhost:8080
+#   docker compose down
+# The Api, PostgreSQL and Keycloak join this file as the mocks are replaced.
+name: counterparty-risk
+
+services:
+  bff:
+    build:
+      context: .
+      dockerfile: src/CounterpartyRisk.Bff/Dockerfile
+    image: counterparty-risk/bff:demo
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Bff__UseMockData: "true"
+    ports:
+      # Loopback only: the demo is not exposed on the network.
+      - "127.0.0.1:8080:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
