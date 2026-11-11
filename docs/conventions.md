@@ -93,7 +93,7 @@ git config core.hooksPath .githooks       # mandatory: gitleaks + forbidden file
 | --- | --- |
 | Pull request | Required; 0 approval (single shared GitHub account); all review threads resolved |
 | Merge methods | Squash or rebase only (linear history) |
-| Required checks | `Gitleaks (full history)`, `TruffleHog (verified secrets)`, `Forbidden files guard` (from GitHub Actions) |
+| Required checks | `Gitleaks (full history)`, `TruffleHog (verified secrets)`, `Forbidden files guard`, `Build & test (.NET)`, `Vulnerable NuGet packages`, `Workflow pinning`, `SBOM CycloneDX`, `Trivy container scan` (from GitHub Actions) |
 | Force-push / deletion | Forbidden |
 | Bypass | Repository admins, through a pull request only: direct pushes to `main` are rejected for everyone |
 

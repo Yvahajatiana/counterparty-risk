@@ -1,6 +1,10 @@
 name: .NET build & test
 
-# Minimal pipeline (#7). Enriched by #8: CodeQL, SBOM, coverage, dependency review.
+# Supply chain and security pipeline of the .NET solution (#7, #8):
+# build + tests + coverage gate, blocking vulnerable NuGet packages, CycloneDX SBOM,
+# Trivy scan of the container images and dependency review on pull requests.
+# Every action is pinned by full commit SHA (release tag in a trailing comment, bumped by Dependabot).
+# Only the GITHUB_TOKEN is used: no other secret, no Anthropic key, never pull_request_target.
 on:
   push:
     branches: [main]
@@ -14,16 +18,17 @@ concurrency:
   group: dotnet-ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  # Enables locked restore and deterministic CI build (Directory.Build.props)
+  CI: "true"
+
 jobs:
   build-test:
     name: Build & test (.NET)
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      DOTNET_NOLOGO: "true"
-      DOTNET_CLI_TELEMETRY_OPTOUT: "true"
-      # Enables locked restore and deterministic CI build (Directory.Build.props)
-      CI: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -40,8 +45,251 @@ jobs:
       - name: Restore (locked mode, NuGet audit)
         run: dotnet restore CounterpartyRisk.slnx
 
+      - name: Restore local tools (ReportGenerator, CycloneDX)
+        run: dotnet tool restore
+
       - name: Build (warnings as errors)
         run: dotnet build CounterpartyRisk.slnx -c Release --no-restore
 
-      - name: Test (unit, architecture, smoke)
-        run: dotnet test --solution CounterpartyRisk.slnx -c Release --no-build
+      # Coverlet filters live in tests/coverlet.testconfig.json (architecture tests are not instrumented)
+      - name: Test with coverage (unit, architecture, smoke)
+        run: >
+          dotnet test --solution CounterpartyRisk.slnx -c Release --no-build
+          --results-directory TestResults --coverlet
+
+      - name: Merge coverage reports
+        if: ${{ !cancelled() }}
+        run: >
+          dotnet reportgenerator
+          "-reports:TestResults/**/coverage.cobertura.*.xml"
+          -targetdir:coverage
+          "-reporttypes:Cobertura;MarkdownSummaryGithub;HtmlInline"
+
+      # Thresholds: 80% lines on Domain/Application assemblies, 60% lines overall (see #8)
+      - name: Coverage gate
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: ./scripts/ci/coverage-gate.ps1 -CoberturaPath coverage/Cobertura.xml -MinGlobalLine 60 -MinCoreLine 80
+
+      - name: Upload coverage
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dotnet-coverage
+          path: coverage
+          if-no-files-found: ignore
+          retention-days: 14
+
+  vulnerable-packages:
+    name: Vulnerable NuGet packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET (global.json)
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      - name: Restore (locked mode)
+        run: dotnet restore CounterpartyRisk.slnx
+
+      # Blocking on any severity, direct or transitive (complements NuGetAudit, which only runs on restore)
+      - name: Fail on vulnerable packages
+        run: |
+          set -euo pipefail
+          dotnet package list --project CounterpartyRisk.slnx --no-restore \
+            --vulnerable --include-transitive --format json > vulnerable.json
+          # A source or audit problem must fail the job rather than pass silently
+          if jq -e '(.problems // []) | length > 0' vulnerable.json > /dev/null; then
+            jq '.problems' vulnerable.json
+            echo "::error::Vulnerability audit could not complete"
+            exit 1
+          fi
+          jq -r '.projects[] | .path as $p | (.frameworks // [])[]
+                 | ((.topLevelPackages // []) + (.transitivePackages // []))[]
+                 | "\($p | split("/") | last)\t\(.id) \(.resolvedVersion)\t\([.vulnerabilities[] | "\(.severity) \(.advisoryurl)"] | join(", "))"' \
+            vulnerable.json | sort -u > findings.tsv
+          if [ -s findings.tsv ]; then
+            {
+              echo "### Vulnerable NuGet packages"
+              echo ""
+              echo "| Project | Package | Advisories |"
+              echo "| --- | --- | --- |"
+              awk -F'\t' '{ printf "| %s | %s | %s |\n", $1, $2, $3 }' findings.tsv
+            } >> "$GITHUB_STEP_SUMMARY"
+            cat findings.tsv
+            echo "::error::Vulnerable NuGet packages found (see the job summary)"
+            exit 1
+          fi
+          echo "No vulnerable NuGet package (direct or transitive)."
+
+  workflow-pinning:
+    name: Workflow pinning
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # TM-TB6-01 / TM-TB6-04: actions pinned by full SHA, no pull_request_target, no Anthropic secret
+      - name: Check workflow supply chain rules
+        run: |
+          set -euo pipefail
+          status=0
+          unpinned=$(grep -nE '^[[:space:]]*(-[[:space:]]+)?uses:' .github/workflows/*.yml \
+            | grep -vE 'uses:[[:space:]]*["'\'']?\./' \
+            | grep -vE 'uses:[[:space:]]*["'\'']?[^@[:space:]]+@[0-9a-f]{40}["'\'']?([[:space:]]|$)' || true)
+          if [ -n "$unpinned" ]; then
+            echo "::error::Actions must be pinned by full commit SHA:"; echo "$unpinned"; status=1
+          fi
+          if grep -nE '^[[:space:]]*pull_request_target[[:space:]]*:?' .github/workflows/*.yml; then
+            echo "::error::pull_request_target is forbidden"; status=1
+          fi
+          if grep -niE 'secrets\.[a-z_]*anthropic' .github/workflows/*.yml; then
+            echo "::error::No Anthropic secret in CI"; status=1
+          fi
+          [ "$status" -eq 0 ] && echo "All workflow rules respected."
+          exit "$status"
+
+  sbom:
+    name: SBOM CycloneDX
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET (global.json)
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      - name: Restore local tools
+        run: dotnet tool restore
+
+      # Production dependency inventory (test projects excluded), CycloneDX 1.7 JSON with licences
+      - name: Generate CycloneDX SBOM (.NET)
+        run: >
+          dotnet dotnet-CycloneDX CounterpartyRisk.slnx
+          --output sbom --filename bom-dotnet.cdx.json --output-format Json
+          --exclude-test-projects --set-name counterparty-risk
+          --set-version "0.0.${{ github.run_number }}"
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-cyclonedx
+          path: sbom
+          if-no-files-found: error
+          retention-days: 90
+
+  container-scan:
+    name: Trivy container scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: build-test
+    permissions:
+      contents: read
+      # Only needed to publish the SARIF report in Code scanning (when available, see below)
+      security-events: write
+    env:
+      # Images built from a repository Dockerfile. The BFF image lands with PR #54; Api and Workers
+      # images are added here when their Dockerfile exists. Missing Dockerfiles are skipped cleanly.
+      DOCKERFILE: src/CounterpartyRisk.Bff/Dockerfile
+      IMAGE: ccr-bff:ci
+      TRIVY_VERSION: v0.76.1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Detect Dockerfile
+        id: dockerfile
+        run: |
+          if [ -f "$DOCKERFILE" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::$DOCKERFILE not found: container scan skipped"
+            echo "Container scan skipped: \`$DOCKERFILE\` does not exist yet." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Build image
+        if: steps.dockerfile.outputs.present == 'true'
+        run: docker build --pull --file "$DOCKERFILE" --tag "$IMAGE" .
+
+      # Gate: fixable HIGH and CRITICAL vulnerabilities, embedded secrets and image misconfigurations
+      - name: Trivy scan (blocking)
+        if: steps.dockerfile.outputs.present == 'true'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          image-ref: ${{ env.IMAGE }}
+          scanners: vuln,secret,misconfig
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          format: table
+          exit-code: "1"
+
+      # Full report (all severities) kept as an artifact and sent to Code scanning when enabled
+      - name: Trivy report (SARIF)
+        if: ${{ !cancelled() && steps.dockerfile.outputs.present == 'true' }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          image-ref: ${{ env.IMAGE }}
+          scanners: vuln,secret,misconfig
+          format: sarif
+          output: trivy-bff.sarif
+          exit-code: "0"
+
+      - name: Upload Trivy report
+        if: ${{ !cancelled() && steps.dockerfile.outputs.present == 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: trivy-bff-sarif
+          path: trivy-bff.sarif
+          if-no-files-found: ignore
+          retention-days: 30
+
+      # Code scanning needs a public repository or GitHub Code Security on a private one:
+      # set the repository variable CODE_SCANNING_ENABLED=true once it is enabled.
+      - name: Publish to Code scanning
+        if: >-
+          ${{ !cancelled() && steps.dockerfile.outputs.present == 'true'
+          && (github.event.repository.private == false || vars.CODE_SCANNING_ENABLED == 'true') }}
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: trivy-bff.sarif
+          category: trivy-bff
+
+  dependency-review:
+    name: Dependency review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Same availability rule as Code scanning (dependency graph + Code Security on private repositories)
+    if: >-
+      ${{ github.event_name == 'pull_request'
+      && (github.event.repository.private == false || vars.CODE_SCANNING_ENABLED == 'true') }}
+    steps:
+      - name: Dependency review (vulnerabilities and forbidden licences)
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: moderate
+          deny-licenses: >-
+            AGPL-1.0-only, AGPL-1.0-or-later, AGPL-3.0-only, AGPL-3.0-or-later,
+            SSPL-1.0, BUSL-1.1, Elastic-2.0

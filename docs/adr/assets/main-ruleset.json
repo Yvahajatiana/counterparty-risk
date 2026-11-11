@@ -38,7 +38,12 @@
         "required_status_checks": [
           { "context": "Gitleaks (full history)", "integration_id": 15368 },
           { "context": "TruffleHog (verified secrets)", "integration_id": 15368 },
-          { "context": "Forbidden files guard", "integration_id": 15368 }
+          { "context": "Forbidden files guard", "integration_id": 15368 },
+          { "context": "Build & test (.NET)", "integration_id": 15368 },
+          { "context": "Vulnerable NuGet packages", "integration_id": 15368 },
+          { "context": "Workflow pinning", "integration_id": 15368 },
+          { "context": "SBOM CycloneDX", "integration_id": 15368 },
+          { "context": "Trivy container scan", "integration_id": 15368 }
         ]
       }
     }
