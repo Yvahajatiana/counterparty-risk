@@ -1,6 +1,6 @@
 # Threat model (STRIDE)
 
-Status: **v1.0** (issue #4) - owner: Lead - next formal review: #38 (DAST and end-to-end security review).
+Status: **v1.1** (issue #4; governance capabilities added by #52) - owner: Lead - next formal review: #38 (DAST and end-to-end security review).
 
 Related documents:
 [data-flow.md](data-flow.md) (detailed DFD and flows F1-F18) ·
@@ -109,32 +109,34 @@ flowchart LR
 | TM-TB3-05 | T | Pagination cursor tampered with, replayed by another user, or reused after expiry | Medium | Cursor protected by a time-limited Data Protection protector of the API key ring (`ccr-api`, see TM-TB4-08) containing last key, filter hash and `sub` | SEC-148 | #31 | - |
 | TM-TB3-06 | I | BOPLA: internal keys, `run_id`, `input_hash` or technical columns exposed | Medium | Dedicated DTOs, `public_id` UUIDv4 distinct from internal keys | SEC-106, SEC-190 | #31 | - |
 | TM-TB3-07 | I | A user restricted to one business line sees the full netting set measure (PFE, EAD, RWA) | Medium | Business-line filtering only through allocated facts (#25); field-level rules in the authorization matrix | SEC-103, SEC-106 | #9, #25, #31 | - |
-| TM-TB3-08 | D | A query triggers a Monte-Carlo run or a history recomputation, exhausting the engine | High | No API endpoint triggers a simulation; computations run only as scheduled jobs; reads hit precomputed read models; `statement_timeout` | SEC-186, SEC-188 | #22, #26, #31, #39 | `Should_Abort_Query_When_Statement_Timeout_Is_Exceeded` |
+| TM-TB3-08 | D | A request triggers a Monte-Carlo run or a history recomputation inside the API, or a flood of authorized governance commands (`PublishMethodVersionCommand`, manual job runs) exhausts the engine | High | No computation runs inside an API request: an authorized command (`ManageMethodVersions`, `ManageJobRuns`) only queues a request that the scheduler picks up as a job (`[DisallowConcurrentExecution]`, one pending request per job and target, duplicates refused); manual runs limited to a closed list of jobs, last as-of date or failed run, no free parameter, `HistoryRecalculationJob` excluded (rule R10); dedicated `governance` rate limit per `sub`; reads hit precomputed read models; `statement_timeout` | SEC-186, SEC-188 | #19, #22, #26, #31, #39 | `Should_Abort_Query_When_Statement_Timeout_Is_Exceeded`, `Should_Queue_Job_Without_Computing_In_Request`, `Should_Return429_When_Governance_Rate_Is_Exceeded`, `Should_Return400_When_Manual_Run_Targets_HistoryRecalculationJob` |
 | TM-TB3-09 | I | Server cache returns figures computed for another scope | Medium | `HybridCache` key includes the hash of the effective scope, filters and `published_run_id` | SEC-178 | #31 | - |
 | TM-TB3-10 | S / E | Client-supplied `Authorization`, `X-Forwarded-*` or `X-User-*` header passed through the proxy | Medium | YARP transform removes `Cookie` and any client `Authorization`, then adds the server-side token | SEC-046 | #9 | `Should_Strip_Client_Authorization_Header_Before_Proxying` |
 | TM-TB3-11 | T | Misleading figures: economic and regulatory measures mixed, benchmark presented as recomputed value | Medium | `meta.exposureLevel`, `meta.measureKind`, `lineage` mandatory in every response; benchmarks served by distinct endpoints under `ReadMarketAndBenchmark`, with attribution (rule R6) | SEC-020, SEC-102 | #5, #31 | `Benchmark_Response_Should_Carry_Attribution_And_Separate_Series` |
 | TM-TB3-12 | I | Large-exposure ratio (exposure / Tier 1) of W10 returned to a user without `ReadCapital`, or computed on a business-line subset (capital leak and misleading ratio) | High | Rule R2: row returned only with `ReadCapital` and a scope covering all business lines of the legal entity; never allocated to a business line | SEC-103, SEC-105 | #9, #30, #31 | `Should_Not_Return_LargeExposure_Ratio_Without_Full_Entity_Scope` |
 | TM-TB3-13 | E / T / R | Limit amount changed without independent approval: maker approves its own change, front office modifies a limit it consumes, a pending change already feeds W4, change cannot be traced | High | `ManageLimits` (limit-admin) and `ApproveLimitChange` (direction) separated; maker != checker on `sub`, in the handler and by a database `CHECK`; writes through `cr_limit_writer` only (F22) with RLS `WITH CHECK`; pending changes excluded from W4 utilisation; audit of old value, new value, maker, checker, timestamp (rule R4) | SEC-021, SEC-104, SEC-192, SEC-198 | #10, #27, #31 | `Should_Return403_When_Maker_Approves_Own_Limit_Change`, `Should_Return403_When_FrontOffice_Calls_ManageLimits`, `Should_Not_Use_Pending_Limit_Change_In_W4_Utilisation` |
+| TM-TB3-14 | T / E | Method version tampered with: a command carries parameters (quantile, CCF, allocation rule) that never went through a reviewed PR, or the stored definition is altered between publication, recalculation and approval | High | `PublishMethodVersionCommand` carries **only a version identifier**; the definition comes from the version catalogue shipped in code (reviewed PR, Lead and Expert CCR), validated by JSON schema; `parameters_sha256` recomputed from the catalogue and compared at publication, before each recalculation batch, at approval and at startup; any mismatch refuses the action and raises an alert; audit fail-closed | SEC-021, SEC-023, SEC-104, SEC-198 | #26 | `Should_Return400_When_Publish_Command_Carries_Parameters`, `Should_Refuse_Approval_When_Parameters_Hash_Differs_From_Catalogue` |
+| TM-TB3-15 | S / E / R | Forged activation of a method version: self-approval, approval of a version still `Computing` or already `Rejected`, replayed approval, pointer `meta.active_method_version` written by a job or the scheduler, rollback without a second person | High | `ManageMethodVersions` (risk manager) and `ApproveMethodVersion` (direction) separated; publisher != approver on `sub`, in the handler and by a database `CHECK`; approval accepted only from `PendingApproval`, once (optimistic concurrency on the version row); pointer switched in a single transaction by `cr_governance_writer` only (F33), never by `cr_scheduler` or `cr_writer`; approval refused when a step of the regulatory calendar falls after `regulatory_reference_date` (ADR-002 §14); rollback to a `Retired` version follows the same four-eyes flow; audit of publisher, approver, version, hashes and timestamps, fail-closed (rule R9) | SEC-021, SEC-104, SEC-164, SEC-198 | #10, #26, #31 | `Should_Return403_When_Publisher_Approves_Own_Method_Version`, `Should_Return409_When_Approving_Version_Not_PendingApproval`, `CrScheduler_Should_Not_Write_Active_Method_Version`, `Should_Refuse_Approval_When_Regulatory_Step_Crossed` |
 
-### TB4 - Components to data, secret and telemetry stores (flows F8, F9, F10, F13, F14, F19-F31)
+### TB4 - Components to data, secret and telemetry stores (flows F8, F9, F10, F13, F14, F19-F31, F33)
 
 Service identities and their exact rights are defined in [data-flow.md](data-flow.md#identities).
 
 | Id | STRIDE | Threat (concrete example) | Sev. | Mitigation | Requirements | Ticket | Abuse-case test |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | TM-TB4-01 | I | RLS bypass: new table without policy, view without `security_invoker`, role with `BYPASSRLS`, scope variable leaking across pooled connections | High | `ENABLE` + `FORCE ROW LEVEL SECURITY`, `WITH CHECK`, `set_config(..., true)` scoped to the transaction, fail-closed when unset, tests on `pg_class.relrowsecurity` and view options | SEC-108, SEC-212 | #11, #43 | `Should_Return_Zero_Rows_When_Scope_Is_Not_Set`, `All_Tables_With_LegalEntityId_Should_Have_Forced_Rls` |
-| TM-TB4-02 | E | A compromised API process writes or alters data, or runs DDL | High | One identity per permission set (data-flow.md): `cr_reader` SELECT only; the only business write role of the API is `cr_limit_writer`, limited to the limit tables and subject to RLS `WITH CHECK`; `cr_writer` for workers only; `cr_migrator` only for the migration bundle; no `SUPERUSER` / `BYPASSRLS`; the API never migrates | SEC-164 | #11, #27 | `CrReader_Should_Not_Insert_Update_Delete_Or_Alter`, `CrLimitWriter_Should_Not_Write_Outside_Limit_Tables`, `Should_Reject_Limit_Change_Outside_Scope` |
+| TM-TB4-02 | E | A compromised API process writes or alters data, or runs DDL | High | One identity per permission set (data-flow.md): `cr_reader` SELECT only; the only business write roles of the API are `cr_limit_writer`, limited to the limit tables and subject to RLS `WITH CHECK`, and `cr_governance_writer` (F33), limited to the method version, approval, active pointer, history correction and job request tables of `meta`, without access to `calc`; `cr_writer` for workers only; `cr_migrator` only for the migration bundle; no `SUPERUSER` / `BYPASSRLS`; the API never migrates | SEC-164 | #11, #27 | `CrReader_Should_Not_Insert_Update_Delete_Or_Alter`, `CrLimitWriter_Should_Not_Write_Outside_Limit_Tables`, `CrGovernanceWriter_Should_Not_Write_Outside_Governance_Tables`, `Should_Reject_Limit_Change_Outside_Scope` |
 | TM-TB4-03 | T / R | Audit trail tampering (update, delete, truncation), including by a PostgreSQL superuser who recomputes the chain | High | `cr_audit_writer` limited to INSERT and column-level `SELECT (seq, hash)` to chain the previous hash, trigger rejecting UPDATE / DELETE; **keyed** chain `HMAC-SHA-256(key, prev_hash ‖ row)` with the key in the vault, outside PostgreSQL; chain head (`seq`, HMAC) anchored every hour in an append-only store of a separate trust domain by an append-only publisher identity (F20); scheduled verification reads the events with `cr_audit_verifier` (F23) and the anchors with a separate read-only identity (F21), compares them with the recomputed chain and raises an alert. Detects: any modification, deletion, insertion or truncation of rows up to the last anchor, even by a DBA (who cannot recompute the HMAC without the key). Does not detect: truncation of events written after the last anchor (window <= 1 h), or forged events appended by a compromised audit writer that holds the key | SEC-208 | #10 | `Should_Detect_Broken_Audit_Chain_At_Exact_Sequence`, `Should_Detect_Recomputed_Chain_Against_External_Anchor`, `CrAuditWriter_Should_Only_Read_Seq_And_Hash`, `CrAuditVerifier_Should_Only_Read_Audit_Events` |
 | TM-TB4-04 | I | Database credentials leaked (repository, logs, image) or connection without TLS | High | Secrets store, no password in `appsettings`, `SSL Mode=VerifyFull` outside local, startup validation | SEC-158, SEC-163, SEC-168 | #10, #11 | `Appsettings_Should_Not_Contain_Secrets` |
 | TM-TB4-05 | I | Amounts, LEIs or SQL parameters written to logs | Medium | No `EnableSensitiveDataLogging`, `LogParameters=false`, `Include Error Detail=false` outside `Development` | SEC-202 | #10, #11 | - |
-| TM-TB4-06 | I | Foreign-key error used as a side channel to learn that a row exists in another entity | Low | Business tables are written by `cr_writer` jobs, and by `cr_limit_writer` for limit tables only; database errors never reach the client | SEC-210 | #43 | - |
+| TM-TB4-06 | I | Foreign-key error used as a side channel to learn that a row exists in another entity | Low | Business tables are written by `cr_writer` jobs, by `cr_limit_writer` for limit tables only and by `cr_governance_writer` for governance tables of `meta` only; database errors never reach the client | SEC-210 | #43 | - |
 | TM-TB4-07 | T | Historical results silently rewritten (calc, financing snapshots) | Medium | INSERT-only grants on snapshots, `method_version_id` and `lineage` NOT NULL, regeneration through a new ingestion run | SEC-023 | #11, #26, #43 | - |
 | TM-TB4-08 | S / T | Theft of the ticket store or of a Data Protection key ring from the database, allowing cookie or cursor forgery | Medium | Tickets in `session.ticket`, role `cr_bff_session` only (F26). Two separate key rings: BFF (`ccr-bff`, table `dpkeys.bff_key`, role `cr_bff_keys`, flow F10) and API (`ccr-api`, table `dpkeys.api_key`, role `cr_api_keys`, flow F19); each table readable and insertable only by its own role, never by `cr_reader`; keys encrypted at rest with key-encryption keys from the vault; tokens stored inside protected tickets | SEC-147, SEC-148, SEC-164 | #9, #31 | - |
 | TM-TB4-09 | D | Rows landing in the `DEFAULT` partition, unbounded table growth | Low | `meta.ensure_partitions` M+3, monitoring of `DEFAULT`, retention by partition detach | - | #11, #19 | - |
 | TM-TB4-10 | I | A compromised component reads the secrets of another component in the vault | Medium | One service identity per component, each limited to its own secrets (F30); audit chain key readable only by the audit writers and the verification job | SEC-168, SEC-169 | #10, #41 | - |
 | TM-TB4-11 | T / I | Logs intercepted in transit or altered on the application host | Medium | OTLP over TLS to a collector separate from the application (F31), RBAC on the collector, no secret in logs | SEC-202, SEC-209 | #7, #10, #41 | - |
 | TM-TB4-12 | I | Audit trail (C1-PD) read outside the `ReadAudit` endpoint | Medium | `cr_audit_reader` connection used only by the audit read handler, behind `ReadAudit`; `cr_reader` has no access to `audit` | SEC-164, SEC-208 | #10, #11 | - |
-| TM-TB4-13 | T | Quartz schedule altered to disable a control (audit verification, data quality) or to run a job with forged data | Medium | `cr_scheduler` limited to `quartz` and `meta.ingestion_run`; jobs defined in code; alert when the verification job stops running | SEC-014, SEC-164 | #11, #19 | - |
+| TM-TB4-13 | T | Quartz schedule altered to disable a control (audit verification, data quality) or to run a job with forged data | Medium | `cr_scheduler` limited to `quartz`, `meta.ingestion_run` and reading the queued job requests, with no write on `meta.active_method_version`; jobs defined in code; alert when the verification job stops running | SEC-014, SEC-164 | #11, #19 | - |
 | TM-TB4-14 | E / T | Partition maintenance abused to run DDL or to drop history or audit data | Medium | `cr_partition_job` has `EXECUTE` only on two `SECURITY DEFINER` procedures with validated parameters; the purge excludes `audit`, whose partitions are only detached by a traced operating procedure | SEC-164 | #11, #19, #26 | - |
 | TM-TB4-15 | I / E | Keycloak database access exposes hashed credentials and sessions, or a Keycloak compromise reaches application data | Medium | Separate database, `cr_keycloak` has no access to the application database, TLS, password hashing by Keycloak | SEC-150, SEC-164 | #9, #41 | - |
 
@@ -191,18 +193,21 @@ Service identities and their exact rights are defined in [data-flow.md](data-flo
 | Browser / Angular SPA | TM-TB1-03, TM-TB1-04, TM-TB1-05 | No token, CSP + Trusted Types, safe rendering, no sensitive storage (#12, #13, #14) |
 | BFF | TM-TB1-01, -02, -06, -07, -08, -09, TM-TB2-01, -06, TM-TB3-10 | Cookie session, OIDC client, CSRF header, YARP header hygiene, rate limiting, headers (#9, #10) |
 | Keycloak | TM-TB2-02, -04, -05, -07, -08, -09 | Realm as code, MFA, brute force detection, password policy, events (#9) |
-| API | TM-TB2-03, TM-TB2-09, TM-TB3-01..13, TM-TB7-01..05 | JWT validation, ABAC, allowlisted filters, DTOs, audit, export pipeline (#9, #10, #31) |
+| API | TM-TB2-03, TM-TB2-09, TM-TB3-01..15, TM-TB7-01..05 | JWT validation, ABAC, allowlisted filters, DTOs, audit, export pipeline, four-eyes governance commands (#9, #10, #26, #31) |
 | Workers | TM-TB5-01..11, TM-INT-01, -02 | Safe ingestion, quarantine, integrity checks, bounded jobs (#15-#19, #22, #26) |
 | PostgreSQL | TM-TB4-01..09, -12..15 | RLS, roles, TLS, audit schema, partitions (#10, #11, #43) |
 | Vault, collector | TM-TB4-04, -10, -11 | Per-service identities, TLS, separate log destination (#10, #41) |
 | CI/CD | TM-TB6-01..06 | Pinned actions, scans, SBOM, branch protection (#3, #8) |
 
-Count: **73 threats** (TB1: 10, TB2: 9, TB3: 13, TB4: 15, TB5: 11, TB6: 6, TB7: 5, internal: 4), of which
-**31 High**, each with a named abuse-case test.
+Count: **75 threats** (TB1: 10, TB2: 9, TB3: 15, TB4: 15, TB5: 11, TB6: 6, TB7: 5, internal: 4), of which
+**33 High**, each with a named abuse-case test.
 
 ## 7. Authorization matrix (input to #9 and #31)
 
-Validated by the Expert CCR in the review of PR #48; any change requires a new business review.
+Validated by the Expert CCR in the review of PR #48; the governance capabilities (method versions, job runs,
+data quality detail) were validated by the Expert CCR in #52, after the PO decision of 2026-11-05 that the
+switch to a new method is approved by the direction and is no longer automatic; the PO validated the targeted history correction the same day. Any change requires a new
+business review.
 The matrix is coded in one tested `Policies` class (#9) and enforced by the API (#31). Data scope (legal
 entities, business lines) applies on top of every capability; an empty scope returns 403.
 
@@ -221,6 +226,17 @@ entities, business lines) applies on top of every capability; an empty scope ret
 | `ManageLimits` | Create or modify a limit amount (status *pending*) (#27) | No | No | No | No | **Yes** | No |
 | `ApproveLimitChange` | Approve or reject a pending limit change (#27) | No | No | **Yes** | No | No | No |
 | `ReadAudit` | Audit read endpoint (#10) | No | No | Yes | No | No | Yes |
+| `ManageMethodVersions` | `PublishMethodVersionCommand` (version identifier only), resume of an interrupted history recalculation, rollback request to a `Retired` version (#26; rule R9) | **Yes** | No | No | No | No | No |
+| `ApproveMethodVersion` | `ApproveMethodVersionActivationCommand`: approve or reject a version `PendingApproval`, approve a rollback (#26; rule R9) | No | No | **Yes** | No | No | No |
+| `ManageJobRuns` | Manual run of a job from a closed list, last as-of date or failed run only (#19; rule R10) | **Yes** | No | No | No | No | No |
+| `ManageHistoryCorrections` | `RequestHistoryCorrectionCommand`: request the targeted recalculation of one as-of date of the active version after the correction of a closed snapshot (#26; rule R13) | **Yes** | No | No | No | No | No |
+| `ApproveHistoryCorrection` | `ApproveHistoryCorrectionCommand`: approve or reject a pending history correction (#26; rule R13) | No | No | **Yes** | No | No | No |
+| `ReadDataQualityDetail` | `/data-quality/status`, `/data-quality/runs` and other `/data-quality/*` detail endpoints (#19; rule R11) | Yes | No | Yes | Yes | No | **Yes (reduced view, R11)** |
+
+The full history recalculation has no capability of its own: it is started by the publication of a version and
+run by the scheduler (`cr_scheduler`) as `HistoryRecalculationJob`; `ManageMethodVersions` only allows resuming
+an interrupted recalculation. The data quality badge (`meta.dataQuality` of each widget response) stays served
+to every user who can read the widget; only the detail requires `ReadDataQualityDetail`.
 
 ### 7.2 Field-level and cross-widget rules
 
@@ -234,6 +250,11 @@ entities, business lines) applies on top of every capability; an empty scope ret
 | R6 | Market and benchmark views display their attribution (e.g. "Source: ECB statistics."); benchmarks are never on the same series as recomputed values. | `Benchmark_Response_Should_Carry_Attribution_And_Separate_Series` |
 | R7 | A user scoped to a subset of business lines only sees allocated measures (#25), never the full netting set amount; internal identifiers and technical columns are never returned. | `Should_Return_Allocated_Measure_For_BusinessLine_Scoped_User` |
 | R8 | For limit-admin, `ReadLimits` returns only the limit register and the change history, without utilisation, headroom or breach amounts. | `Should_Not_Return_Utilisation_To_LimitAdmin` |
+| R9 | Method versions, four eyes: publisher (`ManageMethodVersions`) != approver (`ApproveMethodVersion`) on `sub`, in the handler and by a database `CHECK`. The publish command carries only a version identifier; the definition comes from the code catalogue and is checked by `parameters_sha256` (TM-TB3-14). Status flow `Computing` -> `PendingApproval` -> `Active` or `Rejected`; no result of a version is visible before its approval. After approval the pointer `meta.active_method_version` switches in a single transaction and the previous version becomes `Retired`; its results are kept, so a rollback is a new four-eyes request on that `Retired` version. Approval is refused when a step of the regulatory calendar falls after `regulatory_reference_date` (ADR-002 §14). | `Should_Return403_When_Publisher_Approves_Own_Method_Version`, `Should_Not_Return_Results_Of_Version_PendingApproval`, `Should_Refuse_Approval_When_Regulatory_Step_Crossed`, `Should_Require_Approval_For_Rollback` |
+| R10 | Manual job runs (`ManageJobRuns`): closed list of job codes defined in code, target limited to the last as-of date or to a failed run, no free parameter, `HistoryRecalculationJob` excluded; the command only queues a request (TM-TB3-08). No four eyes, but every request is audited. | `Should_Return400_When_Manual_Run_Targets_HistoryRecalculationJob`, `Should_Return400_When_Manual_Run_Has_Free_Parameter` |
+| R11 | `ReadDataQualityDetail` for the auditor: aggregated view only (run, rule, status, counts), without any counterparty or trade identifier, monetary values masked (fields not returned by the API). Other roles get the detail within their data scope. | `Should_Return_Aggregated_Data_Quality_View_To_Auditor`, `Should_Not_Return_Counterparty_Identifier_To_Auditor` |
+| R12 | Conditions on the governance capabilities (`ManageMethodVersions`, `ApproveMethodVersion`, `ManageJobRuns`, `ManageHistoryCorrections`, `ApproveHistoryCorrection`): the effective data scope must cover every legal entity, since a method version, a job or a history correction affects all of them (section 7.4); the audit event is written before the action and refuses it if it fails (fail-closed). | `Should_Return403_When_Governance_Scope_Does_Not_Cover_All_Entities`, `Should_Refuse_Governance_Command_When_Audit_Fails` |
+| R13 | History corrections, four eyes (PO decision of 2026-11-05): requester (`ManageHistoryCorrections`) != approver (`ApproveHistoryCorrection`) on `sub`, in the handler and by a database `CHECK`. The request names one as-of date of the active method version and a reason code from a closed list, no free parameter; it is accepted only once the corrected snapshot is closed with a new `inputs_sha256`. Status flow `PendingApproval` -> `Approved` or `Rejected`; only after approval is the recalculation of that date queued for the scheduler (no computation in the request, TM-TB3-08), with the same version. A **mandatory W12 annotation** (`meta.risk_event`, type `HistoryCorrection`: date, reason code, requester, approver) is written with the approval; the corrected point is never shown without it. Request, approval and outcome are audited, fail-closed. | `Should_Return403_When_Requester_Approves_Own_History_Correction`, `Should_Not_Queue_Correction_Before_Approval`, `Should_Annotate_W12_When_History_Correction_Is_Approved` |
 
 ### 7.3 Incompatible role pairs (segregation of duties)
 
@@ -245,6 +266,10 @@ that the incompatible-pairs table is loaded and non-empty, and refuses to start 
 | --- | --- | --- |
 | `ccr-limit-admin` | `ccr-front-office` | The front office never modifies a limit it consumes |
 | `ccr-limit-admin` | `ccr-risk-manager` | The limit administrator is distinct from the risk manager |
+| `ccr-limit-admin` | `ccr-direction` | The approver of a limit change is never its maker |
+| `ccr-risk-manager` | `ccr-direction` | The publisher of a method version or requester of a history correction is never its approver (rules R9, R13) |
+| `ccr-front-office` | `ccr-risk-manager` | The front office never publishes the method that measures its own risk, nor runs jobs |
+| `ccr-front-office` | `ccr-direction` | The front office never approves a method version or a limit change |
 | `ccr-auditor` | Any business role (`ccr-risk-manager`, `ccr-front-office`, `ccr-direction`, `ccr-finance`, `ccr-limit-admin`) | Independence of the audit function |
 
 Tests: `Realm_Should_Not_Assign_Incompatible_Roles`, `Should_Return403_When_Token_Has_Incompatible_Roles`.
@@ -258,10 +283,23 @@ Tests: `Realm_Should_Not_Assign_Incompatible_Roles`, `Should_Return403_When_Toke
 | direction | All | All |
 | finance | Entities of its consolidation perimeter | **All** (required to reconcile COREP C 34 / Pillar 3 per entity) |
 | limit-admin | Entities whose limits it administers | n/a (limit register only, via `ReadLimits`) |
-| auditor | n/a (audit trail only) | n/a |
+| auditor | n/a (audit trail and aggregated data quality view only) | n/a |
 
 An empty scope returns 403 (`Should_Return403_And_Issue_No_Sql_When_Scope_Is_Empty`). A front-office
 account with a wildcard (`*`) scope is rejected (`Should_Return403_When_FrontOffice_Scope_Is_Wildcard`).
+
+Conditions on the governance capabilities (rule R12):
+
+- `ManageMethodVersions`, `ApproveMethodVersion`, `ManageJobRuns`, `ManageHistoryCorrections` and `ApproveHistoryCorrection` require an effective scope covering
+  **every legal entity**: a risk manager with assigned entities only gets 403. The check is done by the API on the
+  token scope, never on a client filter.
+- Every governance command is audited before it runs; if the audit write fails, the command is refused
+  (fail-closed, as for exports).
+
+**Exception for the auditor (empty scope)**: `ReadDataQualityDetail` is the only data endpoint served to the
+auditor despite its empty scope. It returns an aggregated view only (run, rule, status, counts), without any
+counterparty or trade identifier, and with monetary values masked (rule R11). Every other data endpoint keeps
+returning 403 to the auditor.
 
 ### 7.5 Endpoints outside the matrix
 
@@ -272,13 +310,10 @@ account with a wildcard (`*`) scope is rejected (`Should_Return403_When_FrontOff
 | `/csp-report` | Anonymous | Rate limited, size limited, logged (#10) |
 | `/bff/user`, `/bff/logout` | Any authenticated user | Minimal profile, antiforgery on logout (#9) |
 | Health endpoints | Internal network only | No business data (#7) |
-| `PublishMethodVersionCommand`, history recomputation (#26) | **Denied to every role** | No validated capability yet |
-| Manual job trigger (#19) | **Denied to every role** | No validated capability yet |
-| `/data-quality/*` detail endpoints (#19) | **Denied to every role** | No validated capability yet; the status reaches users through `meta.dataQuality` of each response |
 
-The last three rows stay denied by default until the Expert CCR validates a capability for them. They are
-"admin" or "data-steward" features of #19 and #26, and neither role exists in the realm. Enabling one requires a
-new row in 7.1 and, for a write, a dedicated identity in [data-flow.md](data-flow.md#identities).
+The publication of a method version, the history recalculation, the targeted history correction, the manual job runs and the `/data-quality/*`
+detail endpoints now have validated capabilities (section 7.1, #52); the "admin" and "data-steward" roles once
+cited by #19 and #26 do not exist and are not created.
 
 ### 7.6 References
 
@@ -286,6 +321,10 @@ BCBS 239 principles 2 and 11, EBA/GL/2021/05 (internal governance, segregation o
 CRR art. 287 / BCBS CRE53 (independent CCR control unit), BCBS *Principles for the Management of Credit Risk*
 principles 6 and 15. The split of capabilities, the refusal of exports to the front office, the default
 scopes and the choice of direction as limit approver are project assumptions.
+
+Limits of the governance capabilities (#52): no text consulted imposes these roles nor four eyes on a method
+version; it is a **project assumption**. CRR art. 286 to 288 belong to the IMM (used by analogy only) and were
+read on a UK version, to be checked against EUR-Lex. CRD art. 76(5) is **not verified**.
 
 ## 8. Residual risks
 
@@ -305,6 +344,7 @@ scopes and the choice of direction as limit approver are project assumptions.
 | RR-12 | Internal traffic BFF to API may use plain HTTP in local development | Aspire local defaults | HTTPS mandatory outside local (SEC-160) |
 | RR-13 | A compromised API process can forge a `sub` when writing limit changes | The API holds `cr_limit_writer` | Accepted: limited to the limit tables and to the RLS scope of the request; the database `CHECK` and the audit raise the cost, but only an out-of-process approval would remove the risk |
 | RR-14 | An audit event can exist for an action that then failed | Roles use separate connections, so action and audit are not atomic | Accepted: audit first, fail-closed, followed by an outcome event; a crash leaves an event without outcome, never an action without audit |
+| RR-15 | A compromised API process can forge an approver `sub` and switch `meta.active_method_version` | The API holds `cr_governance_writer` | Accepted: the database `CHECK` (publisher != approver), the transition guard (`PendingApproval` only), the hash check against the code catalogue and the fail-closed audit raise the cost and leave a trace; only an out-of-process approval would remove the risk (same as RR-13) |
 
 ## 9. Review triggers
 
