@@ -13,7 +13,7 @@ RUN npx ng build --configuration production
 # 2. BFF publish
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS bff
 WORKDIR /src
-COPY global.json nuget.config Directory.Build.props Directory.Packages.props ./
+COPY global.json nuget.config .editorconfig Directory.Build.props Directory.Packages.props ./
 COPY src/CounterpartyRisk.ServiceDefaults/CounterpartyRisk.ServiceDefaults.csproj src/CounterpartyRisk.ServiceDefaults/packages.lock.json src/CounterpartyRisk.ServiceDefaults/
 COPY src/CounterpartyRisk.Bff/CounterpartyRisk.Bff.csproj src/CounterpartyRisk.Bff/packages.lock.json src/CounterpartyRisk.Bff/
 RUN dotnet restore src/CounterpartyRisk.Bff/CounterpartyRisk.Bff.csproj --locked-mode

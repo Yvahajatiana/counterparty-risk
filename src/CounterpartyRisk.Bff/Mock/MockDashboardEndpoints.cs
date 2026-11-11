@@ -44,7 +44,10 @@ internal static class MockDashboardEndpoints
         return endpoints;
     }
 
-    /// <summary>Strict enum parsing: names only, numeric values are rejected.</summary>
+    /// <summary>
+    /// Strict enum parsing: exact member names only (case-insensitive). Enum.TryParse would also
+    /// accept numbers, padded or signed values and comma-separated flag lists.
+    /// </summary>
     private static bool TryParse<TEnum>(string? value, TEnum fallback, out TEnum result)
         where TEnum : struct, Enum
     {
@@ -53,8 +56,16 @@ internal static class MockDashboardEndpoints
             result = fallback;
             return true;
         }
-        return Enum.TryParse(value, ignoreCase: true, out result)
-            && Enum.IsDefined(result)
-            && !char.IsAsciiDigit(value[0]);
+        foreach (var name in Enum.GetNames<TEnum>())
+        {
+            if (string.Equals(name, value, StringComparison.OrdinalIgnoreCase))
+            {
+                result = Enum.Parse<TEnum>(name);
+                return true;
+            }
+        }
+
+        result = fallback;
+        return false;
     }
 }

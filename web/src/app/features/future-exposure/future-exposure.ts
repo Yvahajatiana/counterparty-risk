@@ -8,16 +8,10 @@ import { futureExposureResource } from '../../core/api/dashboard-api';
 import { PfePeakRow } from '../../core/api/dashboard.models';
 import { widgetNav } from '../../layout/navigation';
 import { Chart } from '../../shared/charts/chart';
-import { formatMillions, formatPercent, MillionsPipe } from '../../shared/format/amount';
+import { toMillions, millionsCell, formatPercent, MillionsPipe } from '../../shared/format/amount';
 import { DataGrid } from '../../shared/grid/data-grid';
 import { LoadState } from '../../shared/ui/load-state';
 import { WidgetHeader } from '../../shared/ui/widget-header';
-
-const toMillions = (value: number) => Math.round(value / 100_000) / 10;
-const millionsCell = {
-  valueFormatter: (p: { value: number }) => formatMillions(p.value),
-  type: 'rightAligned',
-};
 
 /**
  * Future exposure, economic view only (EE, PFE, ENE, EPE). The x axis is the projection horizon, not the

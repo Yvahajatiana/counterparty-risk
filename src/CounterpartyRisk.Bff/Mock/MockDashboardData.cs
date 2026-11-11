@@ -82,7 +82,7 @@ internal sealed class MockDashboardData
                 peak.Counterparty.Name, null),
             new("cva", "Accounting CVA", "CVA", "Accounting", cva, Round(cva * 1.012m), Round(cva * 0.962m), "EUR", "/cva-xva",
                 null, null),
-            new("breaches", "Limit breaches", "Count", "Limits", breaches, breaches - 1, breaches + 1, "count", "/limits",
+            new("breaches", "Limit breaches", "Count", "Limits", breaches, Math.Max(0, breaches - 1), breaches + 1, "count", "/limits",
                 "Counterparties above 100 % of their PFE limit", breaches > 0 ? "breach" : "ok"),
         ];
         return new SummaryResponse(Quality(), tiles);

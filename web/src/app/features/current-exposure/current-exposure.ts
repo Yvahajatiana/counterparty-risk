@@ -5,16 +5,10 @@ import { currentExposureResource } from '../../core/api/dashboard-api';
 import { CurrentExposureRow } from '../../core/api/dashboard.models';
 import { widgetNav } from '../../layout/navigation';
 import { Chart } from '../../shared/charts/chart';
-import { formatMillions, formatPercent, MillionsPipe } from '../../shared/format/amount';
+import { toMillions, millionsCell, formatPercent, MillionsPipe } from '../../shared/format/amount';
 import { DataGrid } from '../../shared/grid/data-grid';
 import { LoadState } from '../../shared/ui/load-state';
 import { WidgetHeader } from '../../shared/ui/widget-header';
-
-const toMillions = (value: number) => Math.round(value / 100_000) / 10;
-const millionsCell = {
-  valueFormatter: (p: { value: number }) => formatMillions(p.value),
-  type: 'rightAligned',
-};
 
 /**
  * Current exposure, from gross to net. CCR (waterfall gross MtM -> netting -> collateral -> RC) and financing

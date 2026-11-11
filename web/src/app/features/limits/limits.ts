@@ -5,15 +5,10 @@ import { limitsResource } from '../../core/api/dashboard-api';
 import { LimitRow } from '../../core/api/dashboard.models';
 import { widgetNav } from '../../layout/navigation';
 import { Chart } from '../../shared/charts/chart';
-import { formatMillions, formatPercent, PercentPipe } from '../../shared/format/amount';
+import { millionsCell, formatPercent, PercentPipe } from '../../shared/format/amount';
 import { DataGrid } from '../../shared/grid/data-grid';
 import { LoadState } from '../../shared/ui/load-state';
 import { WidgetHeader } from '../../shared/ui/widget-header';
-
-const millionsCell = {
-  valueFormatter: (p: { value: number }) => formatMillions(p.value),
-  type: 'rightAligned',
-};
 
 /** Limits: counterparty limits on peak PFE, with the warning / breach colour code. */
 @Component({

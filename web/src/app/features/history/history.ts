@@ -11,7 +11,7 @@ import {
 } from '../../core/api/dashboard.models';
 import { widgetNav } from '../../layout/navigation';
 import { Chart } from '../../shared/charts/chart';
-import { formatMillions, formatPercent } from '../../shared/format/amount';
+import { toMillions, formatMillions, formatPercent } from '../../shared/format/amount';
 import { LoadState } from '../../shared/ui/load-state';
 import { WidgetHeader } from '../../shared/ui/widget-header';
 
@@ -87,7 +87,7 @@ export class History {
         {
           type: 'line',
           name: d.label,
-          data: d.points.map((p) => [Date.parse(p.date), Math.round(p.value / 100_000) / 10]),
+          data: d.points.map((p) => [Date.parse(p.date), toMillions(p.value)]),
           marker: { enabled: false },
         },
       ],

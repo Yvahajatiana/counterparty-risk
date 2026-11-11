@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 using Microsoft.Net.Http.Headers;
 
 namespace CounterpartyRisk.Bff.Hosting;
@@ -8,10 +9,14 @@ namespace CounterpartyRisk.Bff.Hosting;
 /// index.html is never served as a static file: every request gets a fresh nonce,
 /// injected in place of <c>CSP_NONCE_PLACEHOLDER</c> and in the <c>style-src</c> directive.
 /// </summary>
-internal static class SpaHostingExtensions
+internal static partial class SpaHostingExtensions
 {
     private const string NoncePlaceholder = "CSP_NONCE_PLACEHOLDER";
     private const string IndexFile = "index.html";
+
+    /// <summary>Angular build output name with an 8-character content hash, e.g. main-SMVW5PPP.js.</summary>
+    [GeneratedRegex(@"-[A-Za-z0-9_-]{8}\.(js|css|woff2)$", RegexOptions.CultureInvariant)]
+    private static partial Regex HashedAsset();
 
     public static WebApplication UseSecurityHeaders(this WebApplication app)
     {
@@ -50,8 +55,11 @@ internal static class SpaHostingExtensions
         {
             OnPrepareResponse = ctx =>
             {
-                // Angular output files are content-hashed, so they can be cached for a long time.
-                ctx.Context.Response.Headers[HeaderNames.CacheControl] = "public, max-age=31536000, immutable";
+                // Only content-hashed Angular output can be cached for a long time; other public
+                // files (favicon.ico...) keep their URL across releases and must be revalidated.
+                ctx.Context.Response.Headers[HeaderNames.CacheControl] = HashedAsset().IsMatch(ctx.File.Name)
+                    ? "public, max-age=31536000, immutable"
+                    : "no-cache";
             },
         });
 

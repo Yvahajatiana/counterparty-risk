@@ -14,6 +14,17 @@ export function formatMillions(value: number | null | undefined): string {
   return value == null ? '-' : `${millions.format(value / 1_000_000)} m`;
 }
 
+/** Chart value in millions, rounded to one decimal (axes and tooltips show "m"). */
+export function toMillions(value: number): number {
+  return Math.round(value / 100_000) / 10;
+}
+
+/** AG Grid column defaults for an amount shown in millions. */
+export const millionsCell = {
+  valueFormatter: (p: { value: number }) => formatMillions(p.value),
+  type: 'rightAligned',
+};
+
 export function formatInteger(value: number | null | undefined): string {
   return value == null ? '-' : integer.format(value);
 }
