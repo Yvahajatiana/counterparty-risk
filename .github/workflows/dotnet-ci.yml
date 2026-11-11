@@ -1,15 +1,19 @@
-name: .NET build & test
+name: .NET CI
 
 # Supply chain and security pipeline of the .NET solution (#7, #8):
-# build + tests + coverage gate, blocking vulnerable NuGet packages, CycloneDX SBOM,
-# Trivy scan of the container images and dependency review on pull requests.
+# workflow pinning, build + tests + coverage gate, CycloneDX SBOM and blocking vulnerable NuGet
+# packages in ONE job (billed minutes are rounded up per job), then a Trivy scan of the BFF image.
+# No workflow-level path filter: a skipped required check would block the PR. Instead the job
+# detects relevant changes itself and skips its heavy steps while still reporting success.
 # Every action is pinned by full commit SHA (release tag in a trailing comment, bumped by Dependabot).
 # Only the GITHUB_TOKEN is used: no other secret, no Anthropic key, never pull_request_target.
 on:
-  push:
-    branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
+  # Weekly run on main: new advisories on unchanged dependencies, base image drift
+  schedule:
+    - cron: "0 4 * * 1"
 
 permissions:
   contents: read
@@ -25,17 +29,67 @@ env:
   CI: "true"
 
 jobs:
-  build-test:
-    name: Build & test (.NET)
+  dotnet-ci:
+    name: .NET CI
+    # Draft PRs do not run CI; marking the PR ready for review triggers it
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    outputs:
+      image: ${{ steps.changes.outputs.image }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Merge commit and its first parent (the PR base) for change detection
+          fetch-depth: 2
           persist-credentials: false
 
+      - name: Detect relevant changes
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            # Scheduled and manual runs always check everything
+            echo "dotnet=true" >> "$GITHUB_OUTPUT"
+            echo "image=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # On pull_request, HEAD is the merge commit and HEAD^1 the base branch tip
+          git diff --name-only HEAD^1 HEAD > changed.txt
+          echo "Changed files:"; cat changed.txt
+          dotnet_re='^(src/|tests/|scripts/ci/|\.github/workflows/)|\.props$|\.slnx$|^(global\.json|dotnet-tools\.json|nuget\.config|\.editorconfig)$'
+          image_re='^(src/CounterpartyRisk\.Bff/|src/CounterpartyRisk\.ServiceDefaults/|web/|\.github/workflows/dotnet-ci\.yml$)|(^|/)Dockerfile$|(^|/)\.dockerignore$'
+          if grep -qE "$dotnet_re" changed.txt; then dotnet=true; else dotnet=false; fi
+          if grep -qE "$image_re" changed.txt; then image=true; else image=false; fi
+          echo "dotnet=$dotnet" >> "$GITHUB_OUTPUT"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "Relevant changes: .NET=$dotnet, image=$image" >> "$GITHUB_STEP_SUMMARY"
+
+      # TM-TB6-01 / TM-TB6-04: actions pinned by full SHA, no pull_request_target, no Anthropic secret
+      - name: Workflow pinning
+        run: |
+          set -euo pipefail
+          status=0
+          unpinned=$(grep -nE '^[[:space:]]*(-[[:space:]]+)?uses:' .github/workflows/*.yml \
+            | grep -vE 'uses:[[:space:]]*["'\'']?\./' \
+            | grep -vE 'uses:[[:space:]]*["'\'']?[^@[:space:]]+@[0-9a-f]{40}["'\'']?([[:space:]]|$)' || true)
+          if [ -n "$unpinned" ]; then
+            echo "::error::Actions must be pinned by full commit SHA:"; echo "$unpinned"; status=1
+          fi
+          if grep -nE '^[[:space:]]*pull_request_target[[:space:]]*:?' .github/workflows/*.yml; then
+            echo "::error::pull_request_target is forbidden"; status=1
+          fi
+          if grep -niE 'secrets\.[a-z_]*anthropic' .github/workflows/*.yml; then
+            echo "::error::No Anthropic secret in CI"; status=1
+          fi
+          [ "$status" -eq 0 ] && echo "All workflow rules respected."
+          exit "$status"
+
       - name: Setup .NET (global.json)
+        if: steps.changes.outputs.dotnet == 'true'
         uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           global-json-file: global.json
@@ -43,22 +97,26 @@ jobs:
           cache-dependency-path: "**/packages.lock.json"
 
       - name: Restore (locked mode, NuGet audit)
+        if: steps.changes.outputs.dotnet == 'true'
         run: dotnet restore CounterpartyRisk.slnx
 
       - name: Restore local tools (ReportGenerator, CycloneDX)
+        if: steps.changes.outputs.dotnet == 'true'
         run: dotnet tool restore
 
       - name: Build (warnings as errors)
+        if: steps.changes.outputs.dotnet == 'true'
         run: dotnet build CounterpartyRisk.slnx -c Release --no-restore
 
       # Coverlet filters live in tests/coverlet.testconfig.json (architecture tests are not instrumented)
       - name: Test with coverage (unit, architecture, smoke)
+        if: steps.changes.outputs.dotnet == 'true'
         run: >
           dotnet test --solution CounterpartyRisk.slnx -c Release --no-build
           --results-directory TestResults --coverlet
 
       - name: Merge coverage reports
-        if: ${{ !cancelled() }}
+        if: steps.changes.outputs.dotnet == 'true'
         run: >
           dotnet reportgenerator
           "-reports:TestResults/**/coverage.cobertura.*.xml"
@@ -67,12 +125,12 @@ jobs:
 
       # Thresholds: 80% lines on Domain/Application assemblies, 60% lines overall (see #8)
       - name: Coverage gate
-        if: ${{ !cancelled() }}
+        if: steps.changes.outputs.dotnet == 'true'
         shell: pwsh
         run: ./scripts/ci/coverage-gate.ps1 -CoberturaPath coverage/Cobertura.xml -MinGlobalLine 60 -MinCoreLine 80
 
       - name: Upload coverage
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.changes.outputs.dotnet == 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dotnet-coverage
@@ -80,28 +138,27 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-  vulnerable-packages:
-    name: Vulnerable NuGet packages
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      # Production dependency inventory (test projects excluded), CycloneDX 1.7 JSON with licences
+      - name: Generate CycloneDX SBOM (.NET)
+        if: steps.changes.outputs.dotnet == 'true'
+        run: >
+          dotnet dotnet-CycloneDX CounterpartyRisk.slnx
+          --output sbom --filename bom-dotnet.cdx.json --output-format Json
+          --exclude-test-projects --set-name counterparty-risk
+          --set-version "0.0.${{ github.run_number }}"
 
-      - name: Setup .NET (global.json)
-        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+      - name: Upload SBOM
+        if: steps.changes.outputs.dotnet == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          global-json-file: global.json
-          cache: true
-          cache-dependency-path: "**/packages.lock.json"
-
-      - name: Restore (locked mode)
-        run: dotnet restore CounterpartyRisk.slnx
+          name: sbom-cyclonedx
+          path: sbom
+          if-no-files-found: error
+          retention-days: 90
 
       # Blocking on any severity, direct or transitive (complements NuGetAudit, which only runs on restore)
-      - name: Fail on vulnerable packages
+      - name: Vulnerable NuGet packages
+        if: steps.changes.outputs.dotnet == 'true'
         run: |
           set -euo pipefail
           dotnet package list --project CounterpartyRisk.slnx --no-restore \
@@ -130,77 +187,17 @@ jobs:
           fi
           echo "No vulnerable NuGet package (direct or transitive)."
 
-  workflow-pinning:
-    name: Workflow pinning
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      # TM-TB6-01 / TM-TB6-04: actions pinned by full SHA, no pull_request_target, no Anthropic secret
-      - name: Check workflow supply chain rules
-        run: |
-          set -euo pipefail
-          status=0
-          unpinned=$(grep -nE '^[[:space:]]*(-[[:space:]]+)?uses:' .github/workflows/*.yml \
-            | grep -vE 'uses:[[:space:]]*["'\'']?\./' \
-            | grep -vE 'uses:[[:space:]]*["'\'']?[^@[:space:]]+@[0-9a-f]{40}["'\'']?([[:space:]]|$)' || true)
-          if [ -n "$unpinned" ]; then
-            echo "::error::Actions must be pinned by full commit SHA:"; echo "$unpinned"; status=1
-          fi
-          if grep -nE '^[[:space:]]*pull_request_target[[:space:]]*:?' .github/workflows/*.yml; then
-            echo "::error::pull_request_target is forbidden"; status=1
-          fi
-          if grep -niE 'secrets\.[a-z_]*anthropic' .github/workflows/*.yml; then
-            echo "::error::No Anthropic secret in CI"; status=1
-          fi
-          [ "$status" -eq 0 ] && echo "All workflow rules respected."
-          exit "$status"
-
-  sbom:
-    name: SBOM CycloneDX
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Setup .NET (global.json)
-        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
-        with:
-          global-json-file: global.json
-          cache: true
-          cache-dependency-path: "**/packages.lock.json"
-
-      - name: Restore local tools
-        run: dotnet tool restore
-
-      # Production dependency inventory (test projects excluded), CycloneDX 1.7 JSON with licences
-      - name: Generate CycloneDX SBOM (.NET)
-        run: >
-          dotnet dotnet-CycloneDX CounterpartyRisk.slnx
-          --output sbom --filename bom-dotnet.cdx.json --output-format Json
-          --exclude-test-projects --set-name counterparty-risk
-          --set-version "0.0.${{ github.run_number }}"
-
-      - name: Upload SBOM
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: sbom-cyclonedx
-          path: sbom
-          if-no-files-found: error
-          retention-days: 90
+      - name: Nothing to build
+        if: steps.changes.outputs.dotnet != 'true'
+        run: echo "No .NET-relevant change in this PR, so build, tests, SBOM and audit are skipped."
 
   container-scan:
     name: Trivy container scan
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: build-test
+    needs: dotnet-ci
+    # Only when the BFF, the web app or a Dockerfile changed (a skipped job counts as passing)
+    if: needs.dotnet-ci.outputs.image == 'true'
     permissions:
       contents: read
       # Only needed to publish the SARIF report in Code scanning (when available, see below)
@@ -283,7 +280,7 @@ jobs:
     timeout-minutes: 10
     # Same availability rule as Code scanning (dependency graph + Code Security on private repositories)
     if: >-
-      ${{ github.event_name == 'pull_request'
+      ${{ github.event_name == 'pull_request' && github.event.pull_request.draft == false
       && (github.event.repository.private == false || vars.CODE_SCANNING_ENABLED == 'true') }}
     steps:
       - name: Dependency review (vulnerabilities and forbidden licences)

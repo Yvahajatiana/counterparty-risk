@@ -55,6 +55,8 @@ git config core.hooksPath .githooks       # mandatory: gitleaks + forbidden file
 5. The Lead runs a local Claude review (`/code-review`), then merges once every required check is green and every review thread is resolved.
    Agents never merge their own PR.
 
+To save CI minutes, agents open their PR as a **draft** (CI does not run on drafts), push in batches, and mark the PR **ready for review** when the work is done, which starts the CI run.
+
 ## 5. Code
 
 ### All languages
@@ -93,7 +95,7 @@ git config core.hooksPath .githooks       # mandatory: gitleaks + forbidden file
 | --- | --- |
 | Pull request | Required; 0 approval (single shared GitHub account); all review threads resolved |
 | Merge methods | Squash or rebase only (linear history) |
-| Required checks | `Gitleaks (full history)`, `TruffleHog (verified secrets)`, `Forbidden files guard`, `Build & test (.NET)`, `Vulnerable NuGet packages`, `Workflow pinning`, `SBOM CycloneDX`, `Trivy container scan` (from GitHub Actions) |
+| Required checks | `Secret scan`, `.NET CI`, `Trivy container scan` (from GitHub Actions; skipped jobs count as passing) |
 | Force-push / deletion | Forbidden |
 | Bypass | Repository admins, through a pull request only: direct pushes to `main` are rejected for everyone |
 

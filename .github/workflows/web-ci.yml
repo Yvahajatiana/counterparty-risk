@@ -1,12 +1,9 @@
 name: Web CI
 
+# Not a required check: the path filter only saves runs on PRs that do not touch web/.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "web/**"
-      - ".github/workflows/web-ci.yml"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "web/**"
       - ".github/workflows/web-ci.yml"
@@ -26,6 +23,8 @@ defaults:
 jobs:
   web:
     name: Web (lint, test, build, audit, licenses)
+    # Draft PRs do not run CI; marking the PR ready for review triggers it
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
