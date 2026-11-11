@@ -1,5 +1,6 @@
 <mat-toolbar class="cr-topbar" role="banner">
   <a class="cr-brand" routerLink="/">Counterparty Risk</a>
+  <span class="cr-demo-badge">Demo, synthetic data</span>
   <span class="flex-1"></span>
   <button
     mat-stroked-button
@@ -24,7 +25,7 @@
             #rla="routerLinkActive"
             [activated]="rla.isActive"
           >
-            {{ item.code }}
+            {{ item.title }}
           </a>
         }
       </mat-nav-list>

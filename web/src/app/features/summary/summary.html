@@ -1,0 +1,26 @@
+<app-widget-header [widget]="widget" [quality]="summary.value()?.quality" />
+<app-load-state [loading]="summary.isLoading()" [error]="summary.error()" />
+
+@if (summary.value(); as data) {
+  <ul class="cr-tiles" aria-label="Key indicators">
+    @for (tile of data.tiles; track tile.code) {
+      <li>
+        <a class="cr-tile" [routerLink]="tile.route" [attr.data-status]="tile.status">
+          <span class="cr-tile-label">{{ tile.label }}</span>
+          <span class="cr-tile-value cr-numeric">{{ value(tile) }}</span>
+          <span class="cr-tile-level">{{ tile.vision }} · {{ tile.level }}</span>
+          @if (tile.breakdown) {
+            <span class="cr-tile-breakdown cr-numeric">{{ tile.breakdown }}</span>
+          }
+          <span class="cr-tile-changes">
+            @for (change of changes(tile); track change.period) {
+              <span class="cr-numeric" [attr.data-direction]="change.direction">
+                {{ change.period }} {{ change.text }}
+              </span>
+            }
+          </span>
+        </a>
+      </li>
+    }
+  </ul>
+}
