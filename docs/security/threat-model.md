@@ -347,6 +347,7 @@ read on a UK version, to be checked against EUR-Lex. CRD art. 76(5) is **not ver
 | RR-12 | Internal traffic BFF to API may use plain HTTP in local development | Aspire local defaults | HTTPS mandatory outside local (SEC-160) |
 | RR-13 | A compromised API process can forge a `sub` when writing limit changes | The API holds `cr_limit_writer` | Accepted: limited to the limit tables and to the RLS scope of the request; the database `CHECK` and the audit raise the cost, but only an out-of-process approval would remove the risk |
 | RR-14 | An audit event can exist for an action that then failed | Roles use separate connections, so action and audit are not atomic | Accepted: audit first, fail-closed, followed by an outcome event; a crash leaves an event without outcome, never an action without audit |
+| RR-15 | A compromised API process can forge an approver `sub` and switch `meta.active_method_version` | The API holds `cr_governance_writer` | Accepted: the database `CHECK` (publisher != approver), the transition guard (`PendingApproval` only), the hash check against the code catalogue and the fail-closed audit raise the cost and leave a trace; only an out-of-process approval would remove the risk (same as RR-13) |
 
 ## 9. Review triggers
 
