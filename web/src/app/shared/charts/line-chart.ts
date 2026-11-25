@@ -21,6 +21,10 @@ export class LineChart extends ChartBase {
   readonly rebase100 = input(false);
   readonly limits = input<readonly CrLimitLine[]>([]);
   readonly events = input<readonly CrEventMarker[]>([]);
+  /** Zoom on the X axis by dragging (long histories). */
+  readonly zoomX = input(false);
+  /** Point markers: true / false, or null for automatic (shown up to 24 points). */
+  readonly markers = input<boolean | null>(null);
 
   protected override readonly build = computed(() =>
     guardedBuild(this.fullTitle(), () =>
@@ -33,6 +37,8 @@ export class LineChart extends ChartBase {
         rebase100: this.rebase100(),
         limits: this.limits(),
         events: this.events(),
+        zoomX: this.zoomX(),
+        markers: this.markers(),
       }),
     ),
   );

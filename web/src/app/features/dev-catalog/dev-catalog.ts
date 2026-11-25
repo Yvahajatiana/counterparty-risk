@@ -94,14 +94,14 @@ const months = ['2026-06-30', '2026-07-31', '2026-08-31', '2026-09-30', '2026-10
       </section>
       <section class="cr-card" aria-label="Waterfall">
         <app-waterfall-chart
-          title="CCR exposure (EUR m)"
+          heading="CCR exposure (EUR m)"
           [level]="{ from: 'GrossBeforeCrm', to: 'AfterCollateral' }"
           [steps]="steps"
         />
       </section>
       <section class="cr-card" aria-label="Lines">
         <app-line-chart
-          title="EE and PFE by horizon (EUR m)"
+          heading="EE and PFE by horizon (EUR m)"
           level="AfterCollateral"
           [series]="profile"
           xTitle="Projection horizon"
@@ -109,7 +109,7 @@ const months = ['2026-06-30', '2026-07-31', '2026-08-31', '2026-09-30', '2026-10
       </section>
       <section class="cr-card" aria-label="Rebased lines">
         <app-line-chart
-          title="EAD vs limit utilisation, rebased"
+          heading="EAD vs limit utilisation, rebased"
           level="Ead"
           xKind="date"
           [rebase100]="true"
@@ -119,14 +119,14 @@ const months = ['2026-06-30', '2026-07-31', '2026-08-31', '2026-09-30', '2026-10
       </section>
       <section class="cr-card" aria-label="Stacked bars">
         <app-stacked-bar-chart
-          title="SA-CCR EAD by asset class (EUR m)"
+          heading="SA-CCR EAD by asset class (EUR m)"
           level="Ead"
           [series]="stacked"
         />
       </section>
       <section class="cr-card" aria-label="Stacked bars 100 %">
         <app-stacked-bar-chart
-          title="Share of exposure under CSA"
+          heading="Share of exposure under CSA"
           level="AfterCollateral"
           stacking="percent"
           [series]="stacked"
@@ -134,14 +134,14 @@ const months = ['2026-06-30', '2026-07-31', '2026-08-31', '2026-09-30', '2026-10
       </section>
       <section class="cr-card" aria-label="Grouped bars">
         <app-grouped-bar-chart
-          title="Collateral received vs posted (EUR m)"
+          heading="Collateral received vs posted (EUR m)"
           level="AfterCollateral"
           [series]="grouped"
         />
       </section>
       <section class="cr-card" aria-label="Horizontal bars">
         <app-horizontal-bar-chart
-          title="Limit utilisation"
+          heading="Limit utilisation"
           level="AfterCollateral"
           family="Economic"
           seriesName="Utilisation"
@@ -150,7 +150,7 @@ const months = ['2026-06-30', '2026-07-31', '2026-08-31', '2026-09-30', '2026-10
       </section>
       <section class="cr-card" aria-label="Pareto">
         <app-pareto-chart
-          title="Top 10 counterparties by EAD"
+          heading="Top 10 counterparties by EAD"
           level="Ead"
           family="Regulatory"
           seriesName="EAD"
@@ -158,12 +158,12 @@ const months = ['2026-06-30', '2026-07-31', '2026-08-31', '2026-09-30', '2026-10
         />
       </section>
       <section class="cr-card" aria-label="Rule violation">
-        <app-line-chart title="Rejected: PFE with EAD" level="Ead" [series]="mixed" />
+        <app-line-chart heading="Rejected: PFE with EAD" level="Ead" [series]="mixed" />
       </section>
     </div>
     <section class="cr-card mt-4" aria-label="Grid">
       <app-data-grid
-        title="Counterparties (EUR m)"
+        heading="Counterparties (EUR m)"
         level="AfterCollateral"
         [rows]="rows"
         [columns]="columns"
@@ -211,7 +211,7 @@ export class DevCatalog {
       id: 'pfe',
       name: 'PFE 97.5%',
       family: 'Economic',
-      dashed: true,
+      dash: 'dash',
       points: [
         ['1M', 70e6],
         ['1Y', 110e6],

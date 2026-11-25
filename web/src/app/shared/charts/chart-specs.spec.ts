@@ -12,7 +12,7 @@ import {
 import { CrSeries } from './chart.models';
 
 const common: CommonChartInput = {
-  title: 'Exposure',
+  heading: 'Exposure',
   level: 'AfterCollateral',
   description: '',
   height: 320,
@@ -211,6 +211,22 @@ describe('chart specs', () => {
       '-100.0 m EUR',
       '200.0 m EUR',
     ]);
+  });
+
+  it('refuses a start value that is not the first step of a waterfall', () => {
+    expect(
+      ruleCode(() =>
+        waterfallSpec({
+          ...common,
+          steps: [
+            { label: 'A', value: 500, kind: 'start', family: 'CurrentExposure' },
+            { label: 'B', value: -100, kind: 'delta', family: 'CurrentExposure' },
+            { label: 'C', value: 300, kind: 'start', family: 'CurrentExposure' },
+            { label: 'D', value: 0, kind: 'total', family: 'CurrentExposure' },
+          ],
+        }),
+      ),
+    ).toBe('chart.waterfall_start');
   });
 
   it('colours horizontal bars by threshold status', () => {

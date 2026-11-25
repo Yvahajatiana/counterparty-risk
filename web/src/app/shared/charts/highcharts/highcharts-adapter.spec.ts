@@ -1,4 +1,5 @@
 import Highcharts from 'highcharts/esm/highcharts';
+import 'highcharts/esm/highcharts-more';
 import type { Options, Point, TooltipFormatterCallbackFunction } from 'highcharts';
 import {
   CommonChartInput,
@@ -8,10 +9,11 @@ import {
   waterfallSpec,
 } from '../chart-specs';
 import { ChartSpec } from '../chart.models';
+import { formatMoney } from '../../format/amount';
 import { escapeText, highchartsAdapter } from './highcharts-adapter';
 
 const common: CommonChartInput = {
-  title: 'Exposure',
+  heading: 'Exposure',
   level: 'AfterCollateral',
   description: 'Accessible description',
   height: 320,
@@ -33,7 +35,7 @@ const specs: Record<string, ChartSpec> = {
           ['1Y', 2e6],
         ],
       },
-      { id: 'b', name: 'PFE', family: 'Economic', points: [['1Y', 3e6]], dashed: true },
+      { id: 'b', name: 'PFE', family: 'Economic', points: [['1Y', 3e6]], dash: 'dash' },
     ],
     unit: 'money',
     xKind: 'category',
@@ -133,9 +135,87 @@ describe('Highcharts adapter', () => {
     const options = highchartsAdapter.toOptions(specs['line']!);
     const series = options.series as { className?: string; data: { y: number | null }[] }[];
     expect(series[0]?.data.map((p) => p.y)).toEqual([1, 2]);
-    expect(series[1]?.className).toBe('cr-series-dashed');
+    expect(series[1]?.className).toBe('cr-series-dash');
     const yAxis = options.yAxis as { plotLines: { value: number; className: string }[] };
     expect(yAxis.plotLines[0]).toMatchObject({ value: 2, className: 'cr-plotline-breach' });
+  });
+});
+
+describe('Highcharts waterfall', () => {
+  it('draws subtotals and totals as the cumulative amounts of the data table', () => {
+    const spec = waterfallSpec({
+      ...common,
+      steps: [
+        { label: 'Gross', value: 500e6, kind: 'start', family: 'CurrentExposure' },
+        { label: 'Netting', value: -200e6, kind: 'delta', family: 'CurrentExposure' },
+        { label: 'After netting', value: 0, kind: 'subtotal', family: 'CurrentExposure' },
+        { label: 'Collateral', value: -100e6, kind: 'delta', family: 'CurrentExposure' },
+        { label: 'After collateral', value: 0, kind: 'subtotal', family: 'CurrentExposure' },
+        { label: 'Add-on', value: 300e6, kind: 'delta', family: 'Regulatory' },
+        { label: 'EAD', value: 0, kind: 'total', family: 'Regulatory' },
+      ],
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const options = highchartsAdapter.toOptions(spec);
+    const chart = Highcharts.chart(container, {
+      ...options,
+      chart: { ...options.chart, width: 600 },
+    });
+
+    const drawn = chart.series[0]!.points.map((p) => formatMoney((p.y ?? 0) * 1e6));
+    expect(drawn).toEqual(spec.table.rows.map((r) => r[1]));
+    expect(spec.table.rows.map((r) => r[1])).toEqual([
+      '500.0 m EUR',
+      '-200.0 m EUR',
+      '300.0 m EUR',
+      '-100.0 m EUR',
+      '200.0 m EUR',
+      '300.0 m EUR',
+      '500.0 m EUR',
+    ]);
+    chart.destroy();
+    container.remove();
+  });
+});
+
+describe('Highcharts line options', () => {
+  const series = (dash: 'solid' | 'dash' | 'dot', id: string) => ({
+    id,
+    name: id,
+    family: 'Economic' as const,
+    dash,
+    points: Array.from({ length: 30 }, (_, i) => [`P${i}`, i] as const),
+  });
+  const line = (zoomX: boolean, markers: boolean | null) =>
+    highchartsAdapter.toOptions(
+      lineChartSpec({
+        ...common,
+        series: [series('solid', 'ee'), series('dash', 'pfe'), series('dot', 'ene')],
+        unit: 'count',
+        level: 'NotAnExposure',
+        xKind: 'category',
+        xTitle: '',
+        rebase100: false,
+        limits: [],
+        events: [],
+        zoomX,
+        markers,
+      }),
+    );
+
+  it('gives each series its own dash pattern class', () => {
+    const classes = (line(false, null).series as { className?: string }[]).map((s) => s.className);
+    expect(classes).toEqual([undefined, 'cr-series-dash', 'cr-series-dot']);
+  });
+
+  it('enables X zoom and forces markers on demand', () => {
+    expect(line(true, false).chart?.zooming).toEqual({ type: 'x' });
+    expect('zooming' in (line(false, null).chart ?? {})).toBe(false);
+    const markers = (o: Options) =>
+      (o.series as { marker: { enabled: boolean } }[]).map((s) => s.marker.enabled);
+    expect(markers(line(false, null))).toEqual([false, false, false]);
+    expect(markers(line(false, true))).toEqual([true, true, true]);
   });
 });
 

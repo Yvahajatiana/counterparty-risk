@@ -6,6 +6,7 @@ import type {
   XAxisPlotLinesOptions,
   YAxisPlotLinesOptions,
 } from 'highcharts';
+import { isoDateLabel, parseIsoDate } from '../../format/dates';
 import { ChartAdapter } from '../chart-adapter';
 import { formatValue } from '../chart-specs';
 import { CartesianSpec, ChartSpec, ChartUnit, WaterfallSpec } from '../chart.models';
@@ -36,10 +37,6 @@ export function escapeText(value: string): string {
   return value.replace(/[&<>"']/g, (c) => ENTITIES[c] ?? c);
 }
 
-function dateLabel(ms: number): string {
-  return new Date(ms).toISOString().slice(0, 10);
-}
-
 /** Tooltip as a single line of text: "<series> - <x>: <value>". */
 function tooltipFormatter(spec: ChartSpec): TooltipFormatterCallbackFunction {
   const scale = SCALE[spec.unit];
@@ -48,7 +45,7 @@ function tooltipFormatter(spec: ChartSpec): TooltipFormatterCallbackFunction {
   const percentStack = spec.kind === 'cartesian' && spec.stacking === 'percent';
   return function (this: Point) {
     // Category and series names were escaped when the options were built.
-    const x = dateAxis ? dateLabel(Number(this.x)) : String(this.category ?? this.name ?? '');
+    const x = dateAxis ? isoDateLabel(Number(this.x)) : String(this.category ?? this.name ?? '');
     const raw = this.y == null ? null : this.y / scale;
     let value = escapeText(formatValue(spec.unit, raw, spec.currency));
     if (percentStack && this.percentage != null) {
@@ -92,9 +89,11 @@ function waterfallOptions(spec: WaterfallSpec): Options {
         name: escapeText(spec.title),
         data: spec.steps.map((step) => {
           const name = escapeText(step.label);
+          // isSum (not isIntermediateSum) for subtotals: the bar and its value are the cumulative
+          // amount since the start, like the data table; isIntermediateSum would only sum the
+          // steps since the previous subtotal.
           switch (step.kind) {
             case 'subtotal':
-              return { name, isIntermediateSum: true, className: 'cr-point-sum' };
             case 'total':
               return { name, isSum: true, className: 'cr-point-sum' };
             default:
@@ -116,9 +115,7 @@ function cartesianOptions(spec: CartesianSpec): Options {
   const percentAxis = spec.unit === 'percent' || spec.stacking === 'percent';
 
   const eventLines: XAxisPlotLinesOptions[] = spec.events.flatMap((event) => {
-    const value = dateAxis
-      ? Date.parse(`${event.at}T00:00:00Z`)
-      : spec.categories.indexOf(event.at);
+    const value = dateAxis ? parseIsoDate(event.at) : spec.categories.indexOf(event.at);
     if (Number.isNaN(value) || value < 0) {
       return [];
     }
@@ -143,8 +140,8 @@ function cartesianOptions(spec: CartesianSpec): Options {
         type: s.mark,
         id: s.id,
         name: escapeText(s.name),
-        className: s.dashed ? 'cr-series-dashed' : undefined,
-        marker: { enabled: s.mark === 'line' && s.points.length <= 24 },
+        className: s.dash === 'solid' ? undefined : `cr-series-${s.dash}`,
+        marker: { enabled: s.mark === 'line' && (spec.markers ?? s.points.length <= 24) },
         data: s.points.map((p) => ({
           x: dateAxis ? (p.x as number) : undefined,
           y: p.y == null ? null : p.y * scale,
@@ -153,8 +150,11 @@ function cartesianOptions(spec: CartesianSpec): Options {
       }) as SeriesOptionsType,
   );
 
+  const base = baseOptions(spec);
   return {
-    ...baseOptions(spec),
+    ...base,
+    // Set only when enabled: Highcharts fails on an explicit undefined zooming option.
+    chart: spec.zoomX ? { ...base.chart, zooming: { type: 'x' } } : base.chart,
     legend: { enabled: spec.series.length > 1, useHTML: false },
     xAxis: {
       type: dateAxis ? 'datetime' : 'category',

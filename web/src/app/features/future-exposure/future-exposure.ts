@@ -65,9 +65,9 @@ export class FutureExposure {
         name: `PFE ${this.quantile()}`,
         family: 'Economic',
         points: points((p) => p.pfe),
-        dashed: true,
+        dash: 'dash',
       },
-      { id: 'ene', name: 'ENE', family: 'Economic', points: points((p) => p.ene), dashed: true },
+      { id: 'ene', name: 'ENE', family: 'Economic', points: points((p) => p.ene), dash: 'dot' },
     ];
   });
 

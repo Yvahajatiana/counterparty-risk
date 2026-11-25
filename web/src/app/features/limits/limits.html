@@ -10,7 +10,7 @@
     <section class="cr-card" aria-labelledby="utilisation">
       <h2 id="utilisation" class="cr-section-title">Limit utilisation by counterparty</h2>
       <app-horizontal-bar-chart
-        title="Utilisation of the peak PFE limit"
+        heading="Utilisation of the peak PFE limit"
         level="AfterCollateral"
         family="Economic"
         seriesName="Utilisation"
@@ -23,7 +23,7 @@
     <section class="cr-card" aria-labelledby="history">
       <h2 id="history" class="cr-section-title">Utilisation over the last 3 months (top 3)</h2>
       <app-line-chart
-        title="Utilisation of the peak PFE limit"
+        heading="Utilisation of the peak PFE limit"
         level="AfterCollateral"
         unit="percent"
         xKind="date"
@@ -37,7 +37,7 @@
 
   <section class="cr-card mt-4" aria-label="Limits and headroom">
     <app-data-grid
-      title="Limits and headroom (EUR m)"
+      heading="Limits and headroom (EUR m)"
       level="AfterCollateral"
       [rows]="d.rows"
       [columns]="columns()"

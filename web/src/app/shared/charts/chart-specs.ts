@@ -1,6 +1,7 @@
 // Pure builders: typed component inputs -> guarded, library-neutral ChartSpec.
 import { DisplayLevel, MeasureFamily, titleWithLevel } from '../measures/measures';
 import { formatBps, formatInteger, formatMoney, formatPercent } from '../format/amount';
+import { isoDateLabel, parseIsoDate } from '../format/dates';
 import {
   assertExposureLevel,
   assertNoMixedFamilies,
@@ -25,7 +26,7 @@ import {
 } from './chart.models';
 
 export interface CommonChartInput {
-  readonly title: string;
+  readonly heading: string;
   readonly level: DisplayLevel;
   readonly description: string;
   readonly height: number;
@@ -72,23 +73,17 @@ export function axisTitle(unit: ChartUnit, currency: string): string {
   }
 }
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
 function toDateMs(value: string): number {
-  const ms = ISO_DATE.test(value) ? Date.parse(`${value}T00:00:00Z`) : Number.NaN;
+  const ms = parseIsoDate(value);
   if (Number.isNaN(ms)) {
     throw new ChartRuleError('chart.invalid_date', 'A date axis needs ISO dates (yyyy-MM-dd).');
   }
   return ms;
 }
 
-function dateLabel(ms: number): string {
-  return new Date(ms).toISOString().slice(0, 10);
-}
-
 function base(input: CommonChartInput, unit: ChartUnit, table: DataTable, yTitle?: string) {
   return {
-    title: titleWithLevel(input.title, input.level),
+    title: titleWithLevel(input.heading, input.level),
     description: input.description,
     unit,
     currency: input.currency,
@@ -105,6 +100,13 @@ export function waterfallSpec(
 ): WaterfallSpec {
   assertNoMixedFamilies(input.steps);
   assertExposureLevel(input.level, ['money']);
+  // A start in the middle would reset the cumulative amount, which a waterfall cannot draw.
+  if (input.steps.some((step, i) => step.kind === 'start' && i > 0)) {
+    throw new ChartRuleError(
+      'chart.waterfall_start',
+      'Only the first step of a waterfall can be a start value.',
+    );
+  }
 
   let running = 0;
   const rows = input.steps.map((step) => {
@@ -136,6 +138,8 @@ interface CartesianInput extends CommonChartInput {
   readonly rebase100: boolean;
   readonly limits: readonly CrLimitLine[];
   readonly events: readonly CrEventMarker[];
+  readonly zoomX?: boolean;
+  readonly markers?: boolean | null;
 }
 
 function rebase(points: readonly (number | null)[]): (number | null)[] {
@@ -181,7 +185,7 @@ function cartesianSpec(input: CartesianInput): CartesianSpec {
       id: s.id,
       name: s.name,
       mark: input.mark,
-      dashed: s.dashed ?? false,
+      dash: s.dash ?? 'solid',
       points: xs.map((x, i): SpecPoint => ({ x, y: values[i] ?? null })),
     };
   });
@@ -190,7 +194,7 @@ function cartesianSpec(input: CartesianInput): CartesianSpec {
   const table: DataTable = {
     headers: [xHeader, ...series.map((s) => s.name)],
     rows: xs.map((x, i) => [
-      typeof x === 'number' ? dateLabel(x) : x,
+      typeof x === 'number' ? isoDateLabel(x) : x,
       ...series.map((s) => formatValue(unit, s.points[i]?.y ?? null, input.currency)),
     ]),
   };
@@ -206,6 +210,8 @@ function cartesianSpec(input: CartesianInput): CartesianSpec {
     series,
     limits: input.limits,
     events: input.events,
+    zoomX: input.zoomX ?? false,
+    markers: input.markers ?? null,
   };
 }
 
@@ -217,6 +223,10 @@ export interface LineChartInput extends CommonChartInput {
   readonly rebase100: boolean;
   readonly limits: readonly CrLimitLine[];
   readonly events: readonly CrEventMarker[];
+  /** Zoom on the X axis by dragging (long histories). */
+  readonly zoomX?: boolean;
+  /** Point markers: true / false, or null for automatic (shown up to 24 points). */
+  readonly markers?: boolean | null;
 }
 
 export function lineChartSpec(input: LineChartInput): CartesianSpec {

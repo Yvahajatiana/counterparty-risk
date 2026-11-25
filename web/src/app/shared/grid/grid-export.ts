@@ -80,7 +80,12 @@ export class GridExportService {
     const link = this.document.createElement('a');
     link.href = url;
     link.download = name;
+    link.hidden = true;
+    // Attached for the click (some browsers ignore clicks on detached anchors); the URL is
+    // revoked once the download has started.
+    this.document.body.appendChild(link);
     link.click();
-    URL.revokeObjectURL(url);
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 }

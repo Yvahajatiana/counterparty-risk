@@ -45,7 +45,7 @@ const COLUMNS: CrColumn<Row>[] = [
 async function renderGrid(mode: 'mock' | 'server' = 'mock') {
   const result = await render(DataGrid<Row>, {
     inputs: {
-      title: 'Exposure',
+      heading: 'Exposure',
       level: 'AfterCollateral',
       rows: ROWS,
       columns: COLUMNS,
@@ -160,11 +160,22 @@ describe('DataGrid', () => {
       'URL',
       Object.assign(URL, { createObjectURL: createUrl, revokeObjectURL: revokeUrl }),
     );
-    const click = vi
-      .spyOn(HTMLAnchorElement.prototype, 'click')
-      .mockImplementation(() => undefined);
+    let attachedOnClick = false;
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      attachedOnClick = this.isConnected;
+    });
     const { api } = await renderGrid('server');
     api.setFilterModel({ counterparty: { filterType: 'text', type: 'contains', filter: 'Al' } });
+    // Multi-column sort: utilisation first, then exposure (the reverse of the column order).
+    api.applyColumnState({
+      state: [
+        { colId: 'utilisation', sort: 'asc', sortIndex: 0 },
+        { colId: 'exposure', sort: 'desc', sortIndex: 1 },
+      ],
+      defaultState: { sort: null },
+    });
 
     screen.getByRole('button', { name: 'Export Excel' }).click();
     const request = TestBed.inject(HttpTestingController).expectOne('/api/v0/exports');
@@ -175,11 +186,18 @@ describe('DataGrid', () => {
       format: 'xlsx',
       asOfDate: '2026-11-24',
       filters: { counterparty: { filter: 'Al' } },
+      sort: [
+        { colId: 'utilisation', sort: 'asc' },
+        { colId: 'exposure', sort: 'desc' },
+      ],
     });
     request.flush(new Blob(['x']));
     await vi.waitFor(() => expect(click).toHaveBeenCalled());
+    // Clicked while attached to the document, removed afterwards, URL revoked asynchronously.
+    expect((click.mock.contexts[0] as HTMLAnchorElement | undefined)?.isConnected).toBe(false);
+    expect(attachedOnClick).toBe(true);
     expect(createUrl).toHaveBeenCalled();
-    expect(revokeUrl).toHaveBeenCalledWith('blob:test');
+    await vi.waitFor(() => expect(revokeUrl).toHaveBeenCalledWith('blob:test'));
     vi.unstubAllGlobals();
     click.mockRestore();
   });

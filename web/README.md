@@ -80,8 +80,8 @@ assemble the components of `src/app/shared`, whose typed inputs enforce the EDB 
 | Component | Use |
 | --- | --- |
 | `app-data-grid` (`shared/grid`) | AG Grid Community: typed columns `money` (EUR m), `percent`, `bps`, `integer`, `date`, `lei`, `text`, `status`; sort, filters, pinned column, pagination; thresholds (80 % / 100 % by default) as CSS classes plus a text marker; export through `POST /api/v0/exports` (#31), client CSV with formula neutralisation in mock mode only |
-| `app-waterfall-chart` | Waterfall steps `start` / `delta` / `subtotal` / `total` |
-| `app-line-chart` | Multi-series lines, `rebase100`, limit lines, event markers |
+| `app-waterfall-chart` | Waterfall steps `start` (first step only) / `delta` / `subtotal` / `total`, subtotals are cumulative |
+| `app-line-chart` | Multi-series lines (`dash`: solid / dash / dot), `rebase100`, limit lines, event markers, `zoomX`, `markers` |
 | `app-stacked-bar-chart` / `app-grouped-bar-chart` | Stacked (`normal` / `percent`) or side-by-side bars |
 | `app-horizontal-bar-chart` | Bars coloured by threshold (limit utilisation, CS01) |
 | `app-pareto-chart` | Top N share and cumulative share on one percentage axis |
@@ -89,7 +89,8 @@ assemble the components of `src/app/shared`, whose typed inputs enforce the EDB 
 
 Rules enforced by construction:
 
-- `title` and `level` are required inputs; the displayed title is `<title> - <exposure level>`
+- `heading` and `level` are required inputs (not `title`, which would also set the native tooltip
+  attribute); the displayed title is `<heading> - <exposure level>`
   (`'NotAnExposure'` must be stated for ratios, spreads and indices, never for amounts).
 - Each series carries its `family` (mirror of `Domain.Contracts/Measures`, #5): economic and
   regulatory series in one chart, or a published benchmark with recomputed figures, are refused

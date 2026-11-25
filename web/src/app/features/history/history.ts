@@ -82,20 +82,26 @@ export class History {
     };
   });
 
-  protected readonly definition = computed(
-    () => INDICATORS.find((i) => i.value === this.view()?.indicator) ?? INDICATORS[0]!,
-  );
+  /**
+   * Family and level of the indicator returned by the API. An unknown indicator has none: the
+   * chart is not drawn rather than shown with a guessed exposure level.
+   */
+  protected readonly definition = computed(() => {
+    const indicator = this.view()?.indicator;
+    return INDICATORS.find((i) => i.value === indicator) ?? null;
+  });
 
   protected readonly series = computed<CrSeries[]>(() => {
     const d = this.view();
-    if (!d) {
+    const definition = this.definition();
+    if (!d || !definition) {
       return [];
     }
     return [
       {
         id: d.indicator,
         name: d.label,
-        family: this.definition().family,
+        family: definition.family,
         points: d.points.map((p) => [p.date, p.value] as const),
       },
     ];

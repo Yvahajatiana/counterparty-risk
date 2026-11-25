@@ -10,7 +10,7 @@
         not an exposure).
       </p>
       <app-waterfall-chart
-        title="CCR exposure (EUR m)"
+        heading="CCR exposure (EUR m)"
         [level]="{ from: 'GrossBeforeCrm', to: 'AfterCollateral' }"
         [steps]="ccrSteps()"
         description="CCR exposure waterfall from gross positive MtM to replacement cost, in EUR millions"
@@ -26,7 +26,7 @@
         {{ d.financing.undrawn | millions }} EUR.
       </p>
       <app-waterfall-chart
-        title="Financing exposure (EUR m)"
+        heading="Financing exposure (EUR m)"
         [level]="{ from: 'Drawn', to: 'Ead' }"
         [steps]="financingSteps()"
         description="Financing exposure waterfall from drawn amount to EAD, in EUR millions"
@@ -36,7 +36,7 @@
 
   <section class="cr-card mt-4" aria-label="CCR exposure by counterparty">
     <app-data-grid
-      title="CCR exposure by counterparty (EUR m)"
+      heading="CCR exposure by counterparty (EUR m)"
       [level]="{ from: 'GrossBeforeCrm', to: 'AfterCollateral' }"
       [rows]="d.rows"
       [columns]="columns"

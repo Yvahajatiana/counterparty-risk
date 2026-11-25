@@ -39,7 +39,7 @@ const ee: CrSeries = {
 describe('chart components', () => {
   it('shows the exposure level in the title', async () => {
     await render(LineChart, {
-      inputs: { title: 'Exposure', level: 'AfterCollateral', series: [ee] },
+      inputs: { heading: 'Exposure', level: 'AfterCollateral', series: [ee] },
     });
     expect(screen.getByText('Exposure - After collateral')).toBeTruthy();
     expect(screen.getByTestId('canvas').textContent).toBe('cartesian');
@@ -48,7 +48,7 @@ describe('chart components', () => {
   it('does not draw a chart mixing economic and regulatory measures, with an explicit error in dev', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const ead: CrSeries = { ...ee, id: 'ead', name: 'EAD', family: 'Regulatory' };
-    await render(LineChart, { inputs: { title: 'Mixed', level: 'Ead', series: [ee, ead] } });
+    await render(LineChart, { inputs: { heading: 'Mixed', level: 'Ead', series: [ee, ead] } });
 
     expect(screen.queryByTestId('canvas')).toBeNull();
     expect(screen.getByRole('alert').textContent).toContain(
@@ -62,13 +62,13 @@ describe('chart components', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const utilisation: CrSeries = { ...ee, id: 'u', unit: 'percent' };
     const { rerender } = await render(LineChart, {
-      inputs: { title: 'Units', level: 'AfterCollateral', series: [ee, utilisation] },
+      inputs: { heading: 'Units', level: 'AfterCollateral', series: [ee, utilisation] },
     });
     expect(screen.getByRole('alert').textContent).toContain('rebase100');
 
     await rerender({
       inputs: {
-        title: 'Units',
+        heading: 'Units',
         level: 'AfterCollateral',
         series: [ee, utilisation],
         rebase100: true,
@@ -84,7 +84,7 @@ describe('chart components', () => {
   it('renders untrusted labels as text in the data table', async () => {
     const { container } = await render(HorizontalBarChart, {
       inputs: {
-        title: 'Utilisation',
+        heading: 'Utilisation',
         level: 'NotAnExposure',
         family: 'Economic',
         seriesName: 'Utilisation',
@@ -99,7 +99,7 @@ describe('chart components', () => {
   it('exposes a data table for keyboard and screen reader users', async () => {
     await render(WaterfallChart, {
       inputs: {
-        title: 'CCR exposure',
+        heading: 'CCR exposure',
         level: { from: 'GrossBeforeCrm', to: 'AfterCollateral' },
         steps: [
           { label: 'Gross', value: 5e6, kind: 'start', family: 'CurrentExposure' },
@@ -117,7 +117,7 @@ describe('chart components', () => {
   it('renders a Pareto of the top N', async () => {
     await render(ParetoChart, {
       inputs: {
-        title: 'Top counterparties by EAD',
+        heading: 'Top counterparties by EAD',
         level: 'Ead',
         family: 'Regulatory',
         seriesName: 'EAD',

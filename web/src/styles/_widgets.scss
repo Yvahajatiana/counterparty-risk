@@ -131,8 +131,13 @@
   }
 }
 
-.highcharts-series.cr-series-dashed .highcharts-graph {
-  stroke-dasharray: 6 4;
+// Line patterns: series stay distinguishable without colour.
+.highcharts-series.cr-series-dash .highcharts-graph {
+  stroke-dasharray: 8 4;
+}
+
+.highcharts-series.cr-series-dot .highcharts-graph {
+  stroke-dasharray: 2 3;
 }
 
 // Grid wrapper (shared/grid/data-grid.ts).

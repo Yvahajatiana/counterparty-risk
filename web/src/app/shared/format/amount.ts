@@ -19,16 +19,17 @@ export function formatMillions(value: number | null | undefined): string {
   return value == null ? '-' : `${oneDecimal.format(value / 1_000_000)} m`;
 }
 
-/** Chart value in millions, rounded to one decimal (axes and tooltips show "m"). */
-export function toMillions(value: number): number {
-  return Math.round(value / 100_000) / 10;
-}
-
-const COMPACT_STEPS: readonly (readonly [number, string])[] = [
-  [1_000_000_000, 'bn'],
-  [1_000_000, 'm'],
+/** Magnitudes in ascending order; units are shown with one decimal, plain amounts with none. */
+const MAGNITUDES: readonly (readonly [step: number, suffix: string])[] = [
+  [1, ''],
   [1_000, 'k'],
+  [1_000_000, 'm'],
+  [1_000_000_000, 'bn'],
 ];
+
+function roundAt(value: number, index: number): number {
+  return index === 0 ? Math.round(value) : Math.round(value * 10) / 10;
+}
 
 /** Amount with a magnitude abbreviation and its currency, e.g. "1.2 bn EUR", "345.6 m EUR". */
 export function formatMoney(value: number | null | undefined, currency = 'EUR'): string {
@@ -36,12 +37,17 @@ export function formatMoney(value: number | null | undefined, currency = 'EUR'):
     return '-';
   }
   const abs = Math.abs(value);
-  for (const [step, suffix] of COMPACT_STEPS) {
-    if (abs >= step) {
-      return `${oneDecimal.format(value / step)} ${suffix} ${currency}`;
-    }
+  let index = 0;
+  while (index < MAGNITUDES.length - 1 && abs >= MAGNITUDES[index + 1]![0]) {
+    index++;
   }
-  return `${integer.format(value)} ${currency}`;
+  // The magnitude is checked after rounding: 999,960 is "1.0 m EUR", never "1,000.0 k EUR".
+  if (index < MAGNITUDES.length - 1 && roundAt(abs / MAGNITUDES[index]![0], index) >= 1000) {
+    index++;
+  }
+  const [step, suffix] = MAGNITUDES[index]!;
+  const text = index === 0 ? integer.format(value) : oneDecimal.format(value / step);
+  return suffix ? `${text} ${suffix} ${currency}` : `${text} ${currency}`;
 }
 
 export function formatInteger(value: number | null | undefined): string {

@@ -6,6 +6,7 @@ import {
   formatMillions,
   formatPercent,
 } from '../format/amount';
+import { parseIsoDate } from '../format/dates';
 import { DEFAULT_THRESHOLDS, thresholdStatus, Thresholds } from '../measures/thresholds';
 import { StatusCell, ThresholdCell, ThresholdCellParams } from './grid-cells';
 
@@ -50,10 +51,10 @@ function numericType(format: Formatter): ColTypeDef {
 
 /** Compares ISO dates (yyyy-MM-dd) for the date filter. */
 function compareIsoDate(filter: Date, cell: string | null): number {
-  if (!cell) {
+  const value = parseIsoDate(cell);
+  if (Number.isNaN(value)) {
     return -1;
   }
-  const value = Date.parse(`${cell}T00:00:00Z`);
   const target = Date.UTC(filter.getFullYear(), filter.getMonth(), filter.getDate());
   return value === target ? 0 : value < target ? -1 : 1;
 }

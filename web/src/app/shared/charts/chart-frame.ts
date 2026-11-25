@@ -39,8 +39,11 @@ export function guardedBuild(title: string, build: () => ChartSpec): ChartBuild 
 /** Inputs shared by every chart component. */
 @Directive()
 export abstract class ChartBase {
-  /** Business title; the exposure level is appended: "<title> - <level>". */
-  readonly title = input.required<string>();
+  /**
+   * Business title; the exposure level is appended: "<heading> - <level>". Not named `title`,
+   * which would also set the native title attribute (tooltip over the whole widget).
+   */
+  readonly heading = input.required<string>();
   /** Exposure level of the amounts, or 'NotAnExposure' for ratios, spreads and indices. */
   readonly level = input.required<DisplayLevel>();
   /** Text read by screen readers (Highcharts accessibility module). */
@@ -48,11 +51,11 @@ export abstract class ChartBase {
   readonly height = input(320);
   readonly currency = input('EUR');
 
-  protected readonly fullTitle = computed(() => titleWithLevel(this.title(), this.level()));
+  protected readonly fullTitle = computed(() => titleWithLevel(this.heading(), this.level()));
 
   protected common(): CommonChartInput {
     return {
-      title: this.title(),
+      heading: this.heading(),
       level: this.level(),
       description: this.description(),
       height: this.height(),

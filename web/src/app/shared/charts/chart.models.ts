@@ -15,6 +15,8 @@ export type ChartUnit = 'money' | 'percent' | 'bps' | 'count' | 'index';
 /** Kind of the X axis: categories (labels, horizons) or ISO dates (yyyy-MM-dd). */
 export type XAxisKind = 'category' | 'date';
 
+export type LineDash = 'solid' | 'dash' | 'dot';
+
 /** One point: [category label or ISO date, value]. A null value is a gap. */
 export type CrPoint = readonly [x: string, y: number | null];
 
@@ -27,7 +29,8 @@ export interface CrSeries {
   /** Defaults to the unit of the chart. Series of different units need rebase100. */
   readonly unit?: ChartUnit;
   readonly points: readonly CrPoint[];
-  readonly dashed?: boolean;
+  /** Line pattern; series of one chart must stay distinguishable without colour. */
+  readonly dash?: LineDash;
 }
 
 export interface WaterfallStep {
@@ -73,7 +76,7 @@ export interface SpecSeries {
   readonly id: string;
   readonly name: string;
   readonly mark: 'line' | 'column' | 'bar';
-  readonly dashed: boolean;
+  readonly dash: LineDash;
   readonly points: readonly SpecPoint[];
 }
 
@@ -110,6 +113,9 @@ export interface CartesianSpec extends ChartSpecBase {
   readonly series: readonly SpecSeries[];
   readonly limits: readonly CrLimitLine[];
   readonly events: readonly CrEventMarker[];
+  readonly zoomX: boolean;
+  /** null: automatic (markers up to 24 points). */
+  readonly markers: boolean | null;
 }
 
 export type ChartSpec = WaterfallSpec | CartesianSpec;

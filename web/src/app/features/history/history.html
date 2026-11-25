@@ -35,15 +35,23 @@
     </p>
   }
   @if (view(); as d) {
-    <app-line-chart
-      [title]="d.label + ' (EUR m)'"
-      [level]="definition().level"
-      xKind="date"
-      xTitle="As-of date"
-      [series]="series()"
-      [events]="events()"
-      [height]="420"
-      description="Indicator history by as-of date, in EUR millions, with method change annotations"
-    />
+    @if (definition(); as definition) {
+      <app-line-chart
+        [heading]="d.label + ' (EUR m)'"
+        [level]="definition.level"
+        [zoomX]="true"
+        [markers]="false"
+        xKind="date"
+        xTitle="As-of date"
+        [series]="series()"
+        [events]="events()"
+        [height]="420"
+        description="Indicator history by as-of date, in EUR millions, with method change annotations"
+      />
+    } @else {
+      <p role="alert" class="cr-chart-error">
+        Unknown indicator "{{ d.indicator }}": the chart is not displayed.
+      </p>
+    }
   }
 </section>

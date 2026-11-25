@@ -150,8 +150,11 @@ export class DataGrid<TRow> {
 
   readonly rows = input.required<readonly TRow[] | undefined>();
   readonly columns = input.required<readonly CrColumn<TRow>[]>();
-  /** Business title; the exposure level is appended: "<title> - <level>". */
-  readonly title = input.required<string>();
+  /**
+   * Business title; the exposure level is appended: "<heading> - <level>". Not named `title`,
+   * which would also set the native title attribute (tooltip over the whole widget).
+   */
+  readonly heading = input.required<string>();
   /** Exposure level of the amounts, or 'NotAnExposure'. */
   readonly level = input.required<DisplayLevel>();
   /** Enables the export buttons (API #31). */
@@ -163,7 +166,7 @@ export class DataGrid<TRow> {
   /** Row marker (left border) for warning / breach rows. */
   readonly rowStatus = input<((row: TRow) => ThresholdStatus | null) | undefined>(undefined);
 
-  protected readonly fullTitle = computed(() => titleWithLevel(this.title(), this.level()));
+  protected readonly fullTitle = computed(() => titleWithLevel(this.heading(), this.level()));
   protected readonly columnDefs = computed(() => toColDefs(this.columns()));
   protected readonly rowData = computed(() => {
     const rows = this.rows();
@@ -199,9 +202,12 @@ export class DataGrid<TRow> {
           format,
           asOfDate: this.asOfDate(),
           filters: api.getFilterModel(),
+          // In sort priority order (sortIndex), as on screen for a multi-column sort.
           sort: api
             .getColumnState()
-            .flatMap((c) => (c.sort ? [{ colId: c.colId, sort: c.sort }] : [])),
+            .filter((c) => c.sort)
+            .sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0))
+            .map((c) => ({ colId: c.colId, sort: c.sort as 'asc' | 'desc' })),
         },
         () => api.exportDataAsCsv(safeCsvParams(`${id.tableId}.csv`)),
       );

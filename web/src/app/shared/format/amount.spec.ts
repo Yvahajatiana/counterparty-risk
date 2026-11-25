@@ -9,6 +9,16 @@ describe('formatters', () => {
     expect(formatMoney(null)).toBe('-');
   });
 
+  it('chooses the magnitude after rounding', () => {
+    expect(formatMoney(999_960)).toBe('1.0 m EUR');
+    expect(formatMoney(-999_960)).toBe('-1.0 m EUR');
+    expect(formatMoney(999_949)).toBe('999.9 k EUR');
+    expect(formatMoney(999.6)).toBe('1.0 k EUR');
+    expect(formatMoney(999.4)).toBe('999 EUR');
+    expect(formatMoney(999_960_000)).toBe('1.0 bn EUR');
+    expect(formatMoney(1_000_000)).toBe('1.0 m EUR');
+  });
+
   it('formats millions, percentages and basis points', () => {
     expect(formatMillions(1_234_500_000)).toBe('1,234.5 m');
     expect(formatPercent(0.853)).toBe('85.3%');
