@@ -4,6 +4,7 @@
     <Project Path="src/CounterpartyRisk.AppHost/CounterpartyRisk.AppHost.csproj" />
     <Project Path="src/CounterpartyRisk.Bff/CounterpartyRisk.Bff.csproj" />
     <Project Path="src/CounterpartyRisk.Domain.Contracts/CounterpartyRisk.Domain.Contracts.csproj" />
+    <Project Path="src/CounterpartyRisk.Infrastructure.Persistence/CounterpartyRisk.Infrastructure.Persistence.csproj" />
     <Project Path="src/CounterpartyRisk.ServiceDefaults/CounterpartyRisk.ServiceDefaults.csproj" />
     <Project Path="src/CounterpartyRisk.SharedKernel.Application/CounterpartyRisk.SharedKernel.Application.csproj" />
     <Project Path="src/CounterpartyRisk.SharedKernel/CounterpartyRisk.SharedKernel.csproj" />
@@ -42,6 +43,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/CounterpartyRisk.Architecture.Tests/CounterpartyRisk.Architecture.Tests.csproj" />
     <Project Path="tests/CounterpartyRisk.Domain.Contracts.UnitTests/CounterpartyRisk.Domain.Contracts.UnitTests.csproj" />
+    <Project Path="tests/CounterpartyRisk.Infrastructure.Persistence.UnitTests/CounterpartyRisk.Infrastructure.Persistence.UnitTests.csproj" />
     <Project Path="tests/CounterpartyRisk.IntegrationTests/CounterpartyRisk.IntegrationTests.csproj" />
     <Project Path="tests/CounterpartyRisk.SharedKernel.UnitTests/CounterpartyRisk.SharedKernel.UnitTests.csproj" />
   </Folder>

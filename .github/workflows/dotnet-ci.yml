@@ -36,6 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
+      dotnet: ${{ steps.changes.outputs.dotnet }}
       image: ${{ steps.changes.outputs.image }}
     steps:
       - name: Checkout
@@ -108,12 +109,13 @@ jobs:
         if: steps.changes.outputs.dotnet == 'true'
         run: dotnet build CounterpartyRisk.slnx -c Release --no-restore
 
-      # Coverlet filters live in tests/coverlet.testconfig.json (architecture tests are not instrumented)
+      # Coverlet filters live in tests/coverlet.testconfig.json (architecture tests are not instrumented).
+      # PostgreSQL tests (trait Category=Database) need Docker: they run in the database-tests job.
       - name: Test with coverage (unit, architecture, smoke)
         if: steps.changes.outputs.dotnet == 'true'
         run: >
           dotnet test --solution CounterpartyRisk.slnx -c Release --no-build
-          --results-directory TestResults --coverlet
+          --results-directory TestResults --coverlet --filter-not-trait "Category=Database"
 
       - name: Merge coverage reports
         if: steps.changes.outputs.dotnet == 'true'
@@ -190,6 +192,38 @@ jobs:
       - name: Nothing to build
         if: steps.changes.outputs.dotnet != 'true'
         run: echo "No .NET-relevant change in this PR, so build, tests, SBOM and audit are skipped."
+
+  # PostgreSQL integration tests (#11): migrations, RLS, roles and partitions on Testcontainers
+  # (postgres:17.11 pinned by digest). Separate job so that the main job stays Docker-free.
+  database-tests:
+    name: Database integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: dotnet-ci
+    if: needs.dotnet-ci.outputs.dotnet == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET (global.json)
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      - name: Restore (locked mode, NuGet audit)
+        run: dotnet restore tests/CounterpartyRisk.IntegrationTests/CounterpartyRisk.IntegrationTests.csproj
+
+      - name: Build
+        run: dotnet build tests/CounterpartyRisk.IntegrationTests/CounterpartyRisk.IntegrationTests.csproj -c Release --no-restore
+
+      - name: PostgreSQL tests (Testcontainers)
+        run: >
+          dotnet test --project tests/CounterpartyRisk.IntegrationTests/CounterpartyRisk.IntegrationTests.csproj
+          -c Release --no-build --filter-trait "Category=Database"
 
   container-scan:
     name: Trivy container scan

@@ -34,6 +34,9 @@ internal static class SolutionModel
 
     public static Assembly ServiceDefaults => Load("ServiceDefaults");
 
+    /// <summary>Shared PostgreSQL foundation (#11): migrations, RLS scope, connection policy.</summary>
+    public static Assembly Persistence => Load("Infrastructure.Persistence");
+
     public static Assembly Layer(string module, string layer) => Load($"{module}.{layer}");
 
     public static string Namespace(string module, string layer) => $"{Root}.{module}.{layer}";
@@ -49,6 +52,7 @@ internal static class SolutionModel
         yield return SharedKernelApplication;
         yield return DomainContracts;
         yield return ServiceDefaults;
+        yield return Persistence;
         yield return Api;
         yield return Bff;
         yield return Workers;

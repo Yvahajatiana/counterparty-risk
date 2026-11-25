@@ -117,6 +117,15 @@ internal static class Rules
             .HaveDependencyOnAny([.. Hosts, .. SolutionModel.OtherModules(module)])
             .GetResult();
 
+    /// <summary>
+    /// Shared persistence (#11) is used by every module Infrastructure: it never depends on a module
+    /// or a host, otherwise one module would reach another through it (rule 4).
+    /// </summary>
+    public static TestResult SharedPersistence(RuleScope scope) =>
+        scope.ShouldNot()
+            .HaveDependencyOnAny([.. Hosts, .. SolutionModel.Modules.Select(m => $"{SolutionModel.Root}.{m}")])
+            .GetResult();
+
     /// <summary>Rule 6: the Api exposes DTOs only, never a domain type.</summary>
     public static TestResult ApiWithoutDomain(RuleScope scope) =>
         scope.ShouldNot()
