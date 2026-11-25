@@ -34,11 +34,16 @@
       Variation over the period: {{ v.amount }} EUR ({{ v.percent }})
     </p>
   }
-  @if (chart(); as options) {
-    <app-chart
-      [options]="options"
+  @if (view(); as d) {
+    <app-line-chart
+      [title]="d.label + ' (EUR m)'"
+      [level]="definition().level"
+      xKind="date"
+      xTitle="As-of date"
+      [series]="series()"
+      [events]="events()"
       [height]="420"
-      label="Indicator history by as-of date, in EUR millions"
+      description="Indicator history by as-of date, in EUR millions, with method change annotations"
     />
   }
 </section>

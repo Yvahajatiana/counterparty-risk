@@ -2,7 +2,6 @@ import { ChangeDetectionStrategy, Component, computed, linkedSignal, signal } fr
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
-import type { Options as ChartOptions } from 'highcharts';
 import { historyResource } from '../../core/api/dashboard-api';
 import {
   HistoryFrequency,
@@ -10,17 +9,36 @@ import {
   HistoryResponse,
 } from '../../core/api/dashboard.models';
 import { widgetNav } from '../../layout/navigation';
-import { Chart } from '../../shared/charts/chart';
-import { toMillions, formatMillions, formatPercent } from '../../shared/format/amount';
+import { CrEventMarker, CrSeries } from '../../shared/charts/chart.models';
+import { LineChart } from '../../shared/charts/line-chart';
+import { formatMillions, formatPercent } from '../../shared/format/amount';
+import { ExposureLevel, MeasureFamily } from '../../shared/measures/measures';
 import { LoadState } from '../../shared/ui/load-state';
 import { WidgetHeader } from '../../shared/ui/widget-header';
 
-const INDICATORS: readonly { readonly value: HistoryIndicator; readonly label: string }[] = [
-  { value: 'Ead', label: 'Total EAD (regulatory)' },
-  { value: 'Rwa', label: 'RWA CCR + CVA (regulatory)' },
-  { value: 'PeakPfe', label: 'Peak PFE (economic)' },
-  { value: 'Cva', label: 'Accounting CVA' },
-  { value: 'ReplacementCost', label: 'Replacement cost (after collateral)' },
+interface IndicatorDefinition {
+  readonly value: HistoryIndicator;
+  readonly label: string;
+  readonly family: MeasureFamily;
+  readonly level: ExposureLevel;
+}
+
+const INDICATORS: readonly IndicatorDefinition[] = [
+  { value: 'Ead', label: 'Total EAD (regulatory)', family: 'Regulatory', level: 'Ead' },
+  {
+    value: 'Rwa',
+    label: 'RWA CCR + CVA (regulatory)',
+    family: 'Regulatory',
+    level: 'RiskWeighted',
+  },
+  { value: 'PeakPfe', label: 'Peak PFE (economic)', family: 'Economic', level: 'AfterCollateral' },
+  { value: 'Cva', label: 'Accounting CVA', family: 'Accounting', level: 'ValuationAdjustment' },
+  {
+    value: 'ReplacementCost',
+    label: 'Replacement cost (after collateral)',
+    family: 'Regulatory',
+    level: 'AfterCollateral',
+  },
 ];
 
 /**
@@ -30,7 +48,7 @@ const INDICATORS: readonly { readonly value: HistoryIndicator; readonly label: s
 @Component({
   selector: 'app-history',
   imports: [
-    Chart,
+    LineChart,
     LoadState,
     MatButtonToggleModule,
     MatFormFieldModule,
@@ -64,36 +82,28 @@ export class History {
     };
   });
 
-  protected readonly chart = computed<ChartOptions | null>(() => {
+  protected readonly definition = computed(
+    () => INDICATORS.find((i) => i.value === this.view()?.indicator) ?? INDICATORS[0]!,
+  );
+
+  protected readonly series = computed<CrSeries[]>(() => {
     const d = this.view();
     if (!d) {
-      return null;
+      return [];
     }
-    return {
-      chart: { type: 'line', zooming: { type: 'x' } },
-      xAxis: {
-        type: 'datetime',
-        title: { text: 'As-of date' },
-        plotLines: d.events.map((e) => ({
-          value: Date.parse(e.date),
-          className: 'cr-plotline-event',
-          label: { text: e.label },
-        })),
+    return [
+      {
+        id: d.indicator,
+        name: d.label,
+        family: this.definition().family,
+        points: d.points.map((p) => [p.date, p.value] as const),
       },
-      yAxis: { title: { text: `${d.level} (EUR m)` } },
-      legend: { enabled: false },
-      tooltip: { valueSuffix: ' m EUR', valueDecimals: 1, xDateFormat: '%d/%m/%Y' },
-      series: [
-        {
-          type: 'line',
-          name: d.label,
-          data: d.points.map((p) => [Date.parse(p.date), toMillions(p.value)]),
-          marker: { enabled: false },
-        },
-      ],
-    };
+    ];
   });
 
+  protected readonly events = computed<CrEventMarker[]>(
+    () => this.view()?.events.map((e) => ({ at: e.date, label: e.label })) ?? [],
+  );
   protected selectIndicator(value: HistoryIndicator): void {
     this.indicator.set(value);
   }

@@ -1,12 +1,12 @@
 import { ChangeDetectionStrategy, Component, computed } from '@angular/core';
-import type { ColDef, GetRowIdFunc } from 'ag-grid-community';
-import type { Options as ChartOptions } from 'highcharts';
 import { currentExposureResource } from '../../core/api/dashboard-api';
 import { CurrentExposureRow } from '../../core/api/dashboard.models';
 import { widgetNav } from '../../layout/navigation';
-import { Chart } from '../../shared/charts/chart';
-import { toMillions, millionsCell, formatPercent, MillionsPipe } from '../../shared/format/amount';
+import { WaterfallStep } from '../../shared/charts/chart.models';
+import { WaterfallChart } from '../../shared/charts/waterfall-chart';
+import { formatPercent, MillionsPipe } from '../../shared/format/amount';
 import { DataGrid } from '../../shared/grid/data-grid';
+import { CrColumn } from '../../shared/grid/grid-columns';
 import { LoadState } from '../../shared/ui/load-state';
 import { WidgetHeader } from '../../shared/ui/widget-header';
 
@@ -16,7 +16,7 @@ import { WidgetHeader } from '../../shared/ui/widget-header';
  */
 @Component({
   selector: 'app-current-exposure',
-  imports: [Chart, DataGrid, LoadState, MillionsPipe, WidgetHeader],
+  imports: [DataGrid, LoadState, MillionsPipe, WaterfallChart, WidgetHeader],
   templateUrl: './current-exposure.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -24,105 +24,94 @@ export class CurrentExposure {
   protected readonly widget = widgetNav('current-exposure');
   protected readonly data = currentExposureResource();
 
-  protected readonly ccrChart = computed<ChartOptions | null>(() => {
+  protected readonly ccrSteps = computed<WaterfallStep[]>(() => {
     const ccr = this.data.value()?.ccr;
     if (!ccr) {
-      return null;
+      return [];
     }
-    return {
-      chart: { type: 'waterfall' },
-      xAxis: { type: 'category' },
-      yAxis: { title: { text: 'EUR m' } },
-      legend: { enabled: false },
-      tooltip: { valueSuffix: ' m EUR', valueDecimals: 1 },
-      series: [
-        {
-          type: 'waterfall',
-          name: 'CCR exposure',
-          data: [
-            { name: 'Gross positive MtM (before netting)', y: toMillions(ccr.grossPositiveMtm) },
-            {
-              name: 'Netting benefit',
-              y: -toMillions(ccr.nettingBenefit),
-              className: 'cr-point-reduction',
-            },
-            {
-              name: 'Current exposure (after netting)',
-              isIntermediateSum: true,
-              className: 'cr-point-sum',
-            },
-            {
-              name: 'Collateral received (net of haircuts)',
-              y: -toMillions(ccr.collateralReceivedNet),
-              className: 'cr-point-reduction',
-            },
-            { name: 'Replacement cost (after collateral)', isSum: true, className: 'cr-point-sum' },
-          ],
-        },
-      ],
-    };
+    return [
+      {
+        label: 'Gross positive MtM (before netting)',
+        value: ccr.grossPositiveMtm,
+        kind: 'start',
+        family: 'CurrentExposure',
+      },
+      {
+        label: 'Netting benefit',
+        value: -ccr.nettingBenefit,
+        kind: 'delta',
+        family: 'CurrentExposure',
+      },
+      {
+        label: 'Current exposure (after netting)',
+        value: 0,
+        kind: 'subtotal',
+        family: 'CurrentExposure',
+      },
+      {
+        label: 'Collateral received (net of haircuts)',
+        value: -ccr.collateralReceivedNet,
+        kind: 'delta',
+        family: 'CurrentExposure',
+      },
+      {
+        label: 'Replacement cost (after collateral)',
+        value: 0,
+        kind: 'total',
+        family: 'Regulatory',
+      },
+    ];
   });
 
-  protected readonly financingChart = computed<ChartOptions | null>(() => {
+  protected readonly financingSteps = computed<WaterfallStep[]>(() => {
     const f = this.data.value()?.financing;
     if (!f) {
-      return null;
+      return [];
     }
-    return {
-      chart: { type: 'waterfall' },
-      xAxis: { type: 'category' },
-      yAxis: { title: { text: 'EUR m' } },
-      legend: { enabled: false },
-      tooltip: { valueSuffix: ' m EUR', valueDecimals: 1 },
-      series: [
-        {
-          type: 'waterfall',
-          name: 'Financing exposure',
-          data: [
-            { name: 'Drawn', y: toMillions(f.drawn) },
-            {
-              name: `Off-balance EAD (CCF ${formatPercent(f.weightedCcf)} x undrawn)`,
-              y: toMillions(f.offBalanceSheetEad),
-            },
-            { name: 'Financing EAD', isSum: true, className: 'cr-point-sum' },
-          ],
-        },
-      ],
-    };
+    return [
+      { label: 'Drawn', value: f.drawn, kind: 'start', family: 'Accounting' },
+      {
+        label: `Off-balance EAD (CCF ${formatPercent(f.weightedCcf)} x undrawn)`,
+        value: f.offBalanceSheetEad,
+        kind: 'delta',
+        family: 'Regulatory',
+      },
+      { label: 'Financing EAD', value: 0, kind: 'total', family: 'Regulatory' },
+    ];
   });
 
-  protected readonly columns: ColDef<CurrentExposureRow>[] = [
-    { field: 'counterparty', headerName: 'Counterparty', minWidth: 190, pinned: 'left' },
-    { field: 'businessLine', headerName: 'Business line' },
-    { field: 'collateralStatus', headerName: 'Collateral status', minWidth: 150 },
-    { field: 'nettingSets', headerName: 'Netting sets', type: 'rightAligned', maxWidth: 120 },
-    { field: 'grossNotional', headerName: 'Gross notional', ...millionsCell },
+  protected readonly columns: CrColumn<CurrentExposureRow>[] = [
+    { field: 'counterparty', header: 'Counterparty', type: 'text', minWidth: 190, pinned: true },
+    { field: 'businessLine', header: 'Business line', type: 'text' },
+    { field: 'collateralStatus', header: 'Collateral status', type: 'text', minWidth: 150 },
+    { field: 'nettingSets', header: 'Netting sets', type: 'integer', maxWidth: 130 },
+    { field: 'grossNotional', header: 'Gross notional (volume)', type: 'money', minWidth: 160 },
     {
       field: 'grossPositiveMtm',
-      headerName: 'Gross MtM+ (before netting)',
+      header: 'Gross MtM+ (before netting)',
+      type: 'money',
       minWidth: 170,
-      ...millionsCell,
     },
     {
       field: 'currentExposure',
-      headerName: 'Current exposure (after netting)',
+      header: 'Current exposure (after netting)',
+      type: 'money',
       minWidth: 190,
-      ...millionsCell,
     },
     {
       field: 'collateralReceivedNet',
-      headerName: 'Collateral received (net)',
+      header: 'Collateral received (net)',
+      type: 'money',
       minWidth: 170,
-      ...millionsCell,
     },
     {
       field: 'replacementCost',
-      headerName: 'RC (after collateral)',
+      header: 'RC (after collateral)',
+      type: 'money',
       minWidth: 160,
       sort: 'desc',
-      ...millionsCell,
     },
   ];
 
-  protected readonly rowId: GetRowIdFunc<CurrentExposureRow> = (p) => p.data.counterpartyId;
+  protected readonly rowId = (p: { data: CurrentExposureRow }) => p.data.counterpartyId;
 }

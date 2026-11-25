@@ -20,21 +20,24 @@
       EPE (1Y) {{ d.epe | millions }} EUR · Effective EPE (1Y) {{ d.effectiveEpe | millions }} EUR ·
       PFE quantile {{ quantile() }}, all netting sets of the counterparty
     </p>
-    @if (profileChart(); as options) {
-      <app-chart
-        [options]="options"
-        label="EE, PFE and ENE by projection horizon, in EUR millions"
-      />
-    }
+    <app-line-chart
+      title="EE, PFE and ENE by projection horizon (EUR m)"
+      level="AfterCollateral"
+      [series]="profile()"
+      xTitle="Projection horizon"
+      description="Economic exposure profile of the selected counterparty by projection horizon, in EUR millions"
+    />
   </section>
 
-  <section class="cr-card mt-4" aria-labelledby="peaks">
-    <h2 id="peaks" class="cr-section-title">Peak PFE by counterparty (EUR)</h2>
+  <section class="cr-card mt-4" aria-label="Peak PFE by counterparty">
     <app-data-grid
+      title="Peak PFE by counterparty (EUR m)"
+      level="AfterCollateral"
       [rows]="d.peaks"
       [columns]="columns()"
       [getRowId]="rowId"
-      label="Peak PFE by counterparty"
+      [exportId]="{ widgetId: 'W3', tableId: 'peak-pfe-by-counterparty' }"
+      [asOfDate]="d.quality.asOfDate"
     />
   </section>
 }

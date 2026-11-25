@@ -1,8 +1,8 @@
 # Counterparty Risk - web
 
 Angular front end of the counterparty risk dashboard (issue #12): workspace, corporate design
-system and front CI. The shell is empty on purpose; the widgets W1-W12 come with #13 and the
-AG Grid / Highcharts wrappers with #14.
+system and front CI. The widgets W1-W12 come with #13 and are assembled from the shared table and
+chart kit of #14 (see below).
 
 ## Stack
 
@@ -12,7 +12,7 @@ AG Grid / Highcharts wrappers with #14.
 | Angular (standalone, signals, zoneless, OnPush, strict) | 22.2 |
 | Angular Material (M3 theme, density -2) | 22.2.6 |
 | Tailwind CSS (layout only, no preflight) | 4.3.4 |
-| AG Grid Community / Highcharts | 36.3.0 / 13.1.1 (installed only, see `THIRD_PARTY_LICENSES.md`) |
+| AG Grid Community / Highcharts | 36.3.0 / 13.1.1 (see `THIRD_PARTY_LICENSES.md`) |
 | Unit tests | Vitest 5 + jsdom + `@testing-library/angular` |
 
 ## Commands
@@ -72,6 +72,36 @@ live in cascade layers: unlayered Material styles always win, so a utility can n
 Material component. Style Material components with their `mat.*-overrides()` mixins, not with
 Tailwind classes.
 
+## Shared tables and charts (#14)
+
+Widgets never use the AG Grid or Highcharts API directly (ESLint `no-restricted-imports`): they
+assemble the components of `src/app/shared`, whose typed inputs enforce the EDB rules.
+
+| Component | Use |
+| --- | --- |
+| `app-data-grid` (`shared/grid`) | AG Grid Community: typed columns `money` (EUR m), `percent`, `bps`, `integer`, `date`, `lei`, `text`, `status`; sort, filters, pinned column, pagination; thresholds (80 % / 100 % by default) as CSS classes plus a text marker; export through `POST /api/v0/exports` (#31), client CSV with formula neutralisation in mock mode only |
+| `app-waterfall-chart` | Waterfall steps `start` / `delta` / `subtotal` / `total` |
+| `app-line-chart` | Multi-series lines, `rebase100`, limit lines, event markers |
+| `app-stacked-bar-chart` / `app-grouped-bar-chart` | Stacked (`normal` / `percent`) or side-by-side bars |
+| `app-horizontal-bar-chart` | Bars coloured by threshold (limit utilisation, CS01) |
+| `app-pareto-chart` | Top N share and cumulative share on one percentage axis |
+| `app-kpi-tile` (`shared/ui`) | KPI value, level, D-1 / M-1 variations, status, link |
+
+Rules enforced by construction:
+
+- `title` and `level` are required inputs; the displayed title is `<title> - <exposure level>`
+  (`'NotAnExposure'` must be stated for ratios, spreads and indices, never for amounts).
+- Each series carries its `family` (mirror of `Domain.Contracts/Measures`, #5): economic and
+  regulatory series in one chart, or a published benchmark with recomputed figures, are refused
+  (`ChartRuleError`): the chart is not drawn, the reason is logged and shown in development.
+- One Y axis only: series of different units require `rebase100`. No pie or donut component
+  exists, and ESLint fails on `type: 'pie'`, `variable-pie` imports and `yAxis: [...]`.
+- Highcharts sits behind the `ChartAdapter` (`shared/charts/highcharts`, ADR-001 §6): `styledMode`
+  (colours from the tokens, no inline style), `useHTML: false` everywhere, every label escaped
+  (untrusted GLEIF names), single-line text tooltips, `credits` on, accessibility module with a
+  description, and an HTML data table under each chart. The exporting modules are not loaded.
+- `/dev/catalog` shows every component on synthetic data in development builds only (the route
+  is removed from production builds).
 ## Security rules
 
 - **No DOM XSS sinks.** ESLint fails on `innerHTML`, `outerHTML`, `insertAdjacentHTML`,

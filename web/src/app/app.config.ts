@@ -18,12 +18,15 @@ export const appConfig: ApplicationConfig = {
     provideRouter(routes, withComponentInputBinding()),
     provideHttpClient(withFetch()),
     // Loaded lazily with the first chart: core, waterfall series (more) and the accessibility module.
+    // The exporting modules are not loaded on purpose: no chart data may reach the public
+    // Highcharts export server (exports go through the API, #31).
     provideHighcharts({
       instance: () => import('highcharts/esm/highcharts').then((m) => m.default),
       modules: () => [
         import('highcharts/esm/highcharts-more'),
         import('highcharts/esm/modules/accessibility'),
       ],
+      options: { lang: { locale: 'en-GB' } },
     }),
     // Instantiated before the first render so that data-theme is set without a flash.
     provideAppInitializer(() => {

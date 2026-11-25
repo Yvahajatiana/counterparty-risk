@@ -9,9 +9,12 @@
         Derivatives and SFT. Gross notional {{ d.ccr.grossNotional | millions }} EUR (volume only,
         not an exposure).
       </p>
-      @if (ccrChart(); as options) {
-        <app-chart [options]="options" label="CCR exposure waterfall, in EUR millions" />
-      }
+      <app-waterfall-chart
+        title="CCR exposure (EUR m)"
+        [level]="{ from: 'GrossBeforeCrm', to: 'AfterCollateral' }"
+        [steps]="ccrSteps()"
+        description="CCR exposure waterfall from gross positive MtM to replacement cost, in EUR millions"
+      />
     </section>
 
     <section class="cr-card" aria-labelledby="financing">
@@ -22,19 +25,24 @@
         {{ d.financing.totalCommitment | millions }} EUR, undrawn
         {{ d.financing.undrawn | millions }} EUR.
       </p>
-      @if (financingChart(); as options) {
-        <app-chart [options]="options" label="Financing exposure waterfall, in EUR millions" />
-      }
+      <app-waterfall-chart
+        title="Financing exposure (EUR m)"
+        [level]="{ from: 'Drawn', to: 'Ead' }"
+        [steps]="financingSteps()"
+        description="Financing exposure waterfall from drawn amount to EAD, in EUR millions"
+      />
     </section>
   </div>
 
-  <section class="cr-card mt-4" aria-labelledby="table">
-    <h2 id="table" class="cr-section-title">CCR exposure by counterparty (EUR)</h2>
+  <section class="cr-card mt-4" aria-label="CCR exposure by counterparty">
     <app-data-grid
+      title="CCR exposure by counterparty (EUR m)"
+      [level]="{ from: 'GrossBeforeCrm', to: 'AfterCollateral' }"
       [rows]="d.rows"
       [columns]="columns"
       [getRowId]="rowId"
-      label="CCR exposure by counterparty"
+      [exportId]="{ widgetId: 'W2', tableId: 'current-exposure-by-counterparty' }"
+      [asOfDate]="d.quality.asOfDate"
     />
   </section>
 }

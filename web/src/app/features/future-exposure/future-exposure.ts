@@ -2,14 +2,14 @@ import { ChangeDetectionStrategy, Component, computed, linkedSignal, signal } fr
 import { FutureExposureResponse } from '../../core/api/dashboard.models';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
-import type { ColDef, GetRowIdFunc } from 'ag-grid-community';
-import type { Options as ChartOptions } from 'highcharts';
 import { futureExposureResource } from '../../core/api/dashboard-api';
-import { PfePeakRow } from '../../core/api/dashboard.models';
+import { ExposureProfilePoint, PfePeakRow } from '../../core/api/dashboard.models';
 import { widgetNav } from '../../layout/navigation';
-import { Chart } from '../../shared/charts/chart';
-import { toMillions, millionsCell, formatPercent, MillionsPipe } from '../../shared/format/amount';
+import { CrSeries } from '../../shared/charts/chart.models';
+import { LineChart } from '../../shared/charts/line-chart';
+import { formatPercent, MillionsPipe } from '../../shared/format/amount';
 import { DataGrid } from '../../shared/grid/data-grid';
+import { CrColumn } from '../../shared/grid/grid-columns';
 import { LoadState } from '../../shared/ui/load-state';
 import { WidgetHeader } from '../../shared/ui/widget-header';
 
@@ -20,8 +20,8 @@ import { WidgetHeader } from '../../shared/ui/widget-header';
 @Component({
   selector: 'app-future-exposure',
   imports: [
-    Chart,
     DataGrid,
+    LineChart,
     LoadState,
     MatFormFieldModule,
     MatSelectModule,
@@ -50,45 +50,37 @@ export class FutureExposure {
     return d?.counterparties.find((c) => c.id === d.counterpartyId)?.name ?? '';
   });
 
-  protected readonly profileChart = computed<ChartOptions | null>(() => {
+  protected readonly profile = computed<CrSeries[]>(() => {
     const d = this.view();
     if (!d) {
-      return null;
+      return [];
     }
-    return {
-      chart: { type: 'line' },
-      xAxis: { categories: d.profile.map((p) => p.horizon), title: { text: 'Projection horizon' } },
-      yAxis: { title: { text: 'EUR m' } },
-      tooltip: { shared: true, valueSuffix: ' m EUR', valueDecimals: 1 },
-      series: [
-        { type: 'line', name: 'EE', data: d.profile.map((p) => toMillions(p.ee)) },
-        {
-          type: 'line',
-          name: `PFE ${this.quantile()}`,
-          data: d.profile.map((p) => toMillions(p.pfe)),
-          dashStyle: 'Dash',
-        },
-        {
-          type: 'line',
-          name: 'ENE',
-          data: d.profile.map((p) => toMillions(p.ene)),
-          dashStyle: 'Dot',
-        },
-      ],
-    };
+    const profile = d.profile;
+    const points = (pick: (p: ExposureProfilePoint) => number) =>
+      profile.map((p) => [p.horizon, pick(p)] as const);
+    return [
+      { id: 'ee', name: 'EE', family: 'Economic', points: points((p) => p.ee) },
+      {
+        id: 'pfe',
+        name: `PFE ${this.quantile()}`,
+        family: 'Economic',
+        points: points((p) => p.pfe),
+        dashed: true,
+      },
+      { id: 'ene', name: 'ENE', family: 'Economic', points: points((p) => p.ene), dashed: true },
+    ];
   });
 
-  protected readonly columns = computed<ColDef<PfePeakRow>[]>(() => [
-    { field: 'counterparty', headerName: 'Counterparty', minWidth: 190 },
-    { field: 'businessLine', headerName: 'Business line' },
-    { field: 'peakPfe', headerName: `Peak PFE ${this.quantile()}`, sort: 'desc', ...millionsCell },
-    { field: 'peakHorizon', headerName: 'Peak horizon', maxWidth: 130 },
-    { field: 'epe', headerName: 'EPE (1Y)', ...millionsCell },
-    { field: 'effectiveEpe', headerName: 'Effective EPE (1Y)', ...millionsCell },
+  protected readonly columns = computed<CrColumn<PfePeakRow>[]>(() => [
+    { field: 'counterparty', header: 'Counterparty', type: 'text', minWidth: 190, pinned: true },
+    { field: 'businessLine', header: 'Business line', type: 'text' },
+    { field: 'peakPfe', header: `Peak PFE ${this.quantile()}`, type: 'money', sort: 'desc' },
+    { field: 'peakHorizon', header: 'Peak horizon', type: 'text', maxWidth: 140 },
+    { field: 'epe', header: 'EPE (1Y)', type: 'money' },
+    { field: 'effectiveEpe', header: 'Effective EPE (1Y)', type: 'money' },
   ]);
 
-  protected readonly rowId: GetRowIdFunc<PfePeakRow> = (p) => p.data.counterpartyId;
-
+  protected readonly rowId = (p: { data: PfePeakRow }) => p.data.counterpartyId;
   protected select(id: string): void {
     this.counterpartyId.set(id);
   }
