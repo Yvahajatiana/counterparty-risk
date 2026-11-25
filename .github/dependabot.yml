@@ -62,7 +62,9 @@ updates:
         patterns: ["*"]
     ignore:
       # The Angular compiler pins TypeScript to a minor range (peer '>=6.0 <6.1'): TypeScript is
-      # bumped by hand together with an Angular upgrade, never on its own.
+      # bumped by hand together with an Angular upgrade, never on its own. This also mutes its security
+      # updates: TypeScript is a build-time tool (not in the bundle) and the CI 'npm audit' step fails
+      # on any high advisory, which is the signal to upgrade.
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
