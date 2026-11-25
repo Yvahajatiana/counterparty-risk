@@ -1,7 +1,7 @@
 version: 2
 updates:
-  # Every ecosystem groups its minor and patch bumps into ONE weekly PR; major bumps stay separate
-  # so they get a dedicated review. Security updates are grouped the same way.
+  # Every ecosystem groups its minor and patch bumps into ONE weekly PR and its security updates into
+  # ONE security PR; major bumps stay separate so they get a dedicated review.
 
   # GitHub Actions: actions are pinned by commit SHA, Dependabot bumps the SHA and the version comment
   - package-ecosystem: "github-actions"
@@ -11,6 +11,9 @@ updates:
     groups:
       actions:
         update-types: ["minor", "patch"]
+        patterns: ["*"]
+      actions-security:
+        applies-to: security-updates
         patterns: ["*"]
 
   # .NET solution (Central Package Management, see ADR-001 and #7)
@@ -27,11 +30,16 @@ updates:
         applies-to: security-updates
         patterns: ["*"]
     ignore:
-      # The platform targets .NET 10 LTS: the 11.x line of the runtime-aligned packages is adopted
-      # together with a target framework upgrade, not package by package.
+      # The platform targets .NET 10 LTS: the next major of the runtime-aligned packages is adopted
+      # together with a target framework upgrade, not package by package. Security fixes ship on the
+      # 10.x line (LTS servicing); a fix published only in a new major is caught by the NuGet audit.
       - dependency-name: "Microsoft.Extensions.*"
         update-types: ["version-update:semver-major"]
       - dependency-name: "Microsoft.AspNetCore.*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.EntityFrameworkCore*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Npgsql*"
         update-types: ["version-update:semver-major"]
 
   # Angular workspace in /web (ADR-001, #12).
@@ -41,10 +49,11 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 10
     groups:
-      # Angular framework and tooling packages must move together (exact peer versions), majors
-      # included: this is the only group that is not limited to minor and patch updates
+      # Angular and its lint tooling must move together (exact peer versions). Angular majors are
+      # not grouped: they arrive as separate PRs and are applied with 'ng update' (migrations).
       angular:
-        patterns: ["@angular/*", "@angular-devkit/*", "@schematics/angular", "angular-eslint"]
+        update-types: ["minor", "patch"]
+        patterns: ["@angular/*", "angular-eslint", "@angular-eslint/*", "typescript-eslint"]
       npm-minor-patch:
         update-types: ["minor", "patch"]
         patterns: ["*"]
@@ -52,9 +61,12 @@ updates:
         applies-to: security-updates
         patterns: ["*"]
     ignore:
-      # TypeScript majors follow the range supported by the Angular compiler and typescript-eslint
+      # The Angular compiler pins TypeScript to a minor range (peer '>=6.0 <6.1'): TypeScript is
+      # bumped by hand together with an Angular upgrade, never on its own. This also mutes its security
+      # updates: TypeScript is a build-time tool (not in the bundle) and the CI 'npm audit' step fails
+      # on any high advisory, which is the signal to upgrade.
       - dependency-name: "typescript"
-        update-types: ["version-update:semver-major"]
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   # Container images (Dockerfiles, compose files) pinned by tag + digest (#7, #8).
   # Image tags declared in the Aspire AppHost C# code are not visible to Dependabot (see ADR-001).
@@ -67,4 +79,7 @@ updates:
     groups:
       docker:
         update-types: ["minor", "patch"]
+        patterns: ["*"]
+      docker-security:
+        applies-to: security-updates
         patterns: ["*"]
