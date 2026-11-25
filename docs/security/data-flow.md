@@ -74,6 +74,7 @@ flowchart LR
   API -- "F19 TB4 SQL/TLS: cr_api_keys" --> PG
   API -- "F22 TB4 SQL/TLS: cr_limit_writer" --> PG
   API -- "F24 TB4 SQL/TLS: cr_audit_reader" --> PG
+  API -- "F33 TB4 SQL/TLS: cr_governance_writer" --> PG
   BFF -- "F10 TB4 SQL/TLS: cr_bff_keys" --> PG
   BFF -- "F25 TB4 SQL/TLS: cr_audit_writer" --> PG
   BFF -- "F26 TB4 SQL/TLS: cr_bff_session" --> PG
@@ -112,7 +113,7 @@ published with the login endpoint. Everything else, including the API, has no pu
 | TB1 | Browser to BFF (`CounterpartyRisk.Bff`), public entry point 1; the browser also reaches public entry point 2 directly, through TB2 (F3) | F1, F2 | Session cookie `__Host-ccr` (opaque key, server-side ticket) | TLS, cookie flags, `X-CSRF` header, CSP, rate limiting, audit |
 | TB2 | BFF / browser / API / administrator to Keycloak; F3 crosses from the internet to public entry point 2, F32 stays on the internal network | F3, F4, F5, F7, F32 | OIDC Authorization Code + PKCE S256, confidential client `ccr-bff`; separate admin credentials for F32 | Exact redirect URIs, `state` / `nonce`, issuer and signature validation, MFA, brute force detection on the public login endpoint, admin console not published |
 | TB3 | BFF to API (`CounterpartyRisk.Api`) | F6 | JWT access token, audience `ccr-api`, added server-side by YARP | API not exposed outside the internal network, JWT revalidated, ABAC per request |
-| TB4 | Components to data, secret and telemetry stores (PostgreSQL, Keycloak database, audit anchors, vault, collector) | F8, F9, F10, F13, F14, F19-F31 | One identity per **permission set**, not per component (see [Identities](#identities)) | Least privilege roles, `FORCE` RLS, TLS `VerifyFull`, parameterised SQL, separate key rings, external audit anchors |
+| TB4 | Components to data, secret and telemetry stores (PostgreSQL, Keycloak database, audit anchors, vault, collector) | F8, F9, F10, F13, F14, F19-F31, F33 | One identity per **permission set**, not per component (see [Identities](#identities)) | Least privilege roles, `FORCE` RLS, TLS `VerifyFull`, parameterised SQL, separate key rings, external audit anchors |
 | TB5 | Workers to external open data sources | F11, F12 | Server certificate only (sources are anonymous) | HTTPS, host allowlist, no cross-domain redirect, size limits, integrity checks, safe parsing, quarantine |
 | TB6 | CI/CD (GitHub Actions) to repository, registries and artefacts | F16, F17, F18 | `GITHUB_TOKEN` with least permissions | Actions pinned by SHA, secret scanning, dependency and image scanning, SBOM, branch protection |
 | TB7 | Export file to the user workstation | F15 | None (the file leaves the system) | Formula neutralisation, row cap, export policy, audit with file hash, licence filtering |
