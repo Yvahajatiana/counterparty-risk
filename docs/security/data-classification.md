@@ -47,7 +47,7 @@ versioned fixtures and from any public screenshot.
 | `bench` | BIS, EBA, FR Y-9C benchmark observations | C0 (some NR flags possible) | Published values kept separate from recomputed values |
 | `calc` | Exposure, SA-CCR, profiles, RWA, CVA, allocation, financing results | C1 | RLS, `method_version_id` mandatory |
 | `reporting` | Read models per widget | C1 | RLS / views in `security_invoker` |
-| `meta` | Data sources and licences, ingestion runs, method versions, DQ results, events | C0 / C1 | No row content in ingestion logs |
+| `meta` | Data sources and licences, ingestion runs, method versions and their approvals, history correction requests, job run requests, DQ results, events | C0 / C1; publisher, approver and requester `sub` C1-PD | No row content in ingestion logs; governance tables written by `cr_governance_writer` only (#52) |
 | `staging` | Unlogged load tables | Same class as the source | Truncated after each run |
 | `quartz` | Job definitions, triggers, run status | C1 | Role `cr_scheduler` only; no secret in job data |
 | `audit` | Audit events | C1-PD | INSERT-only, HMAC chain (key outside PostgreSQL), head anchored externally, monthly partitions, 5-year retention |

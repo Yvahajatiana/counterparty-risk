@@ -3,7 +3,7 @@
 - **Statut** : **Accepté** (décisions métier, PO et Expert CCR, 2026-11-04). Références réglementaires **sous réserve** de la confrontation à EUR-Lex (section « Points à confronter à EUR-Lex »), à faire avant l'implémentation définitive des tickets concernés.
 - **Date** : 2026-11-04
 - **Décideurs** : Product Owner (sponsor métier), Expert CCR (validation métier), Lead (rédaction)
-- **Issue** : #6 ; spécification des financements : #45
+- **Issue** : #6 ; spécification des financements : #45 ; gouvernance des versions de méthode : #52 (amendement du 2026-11-11)
 - **Tickets impactés** : #5, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30, #32 à #37, #41, #43, #44, #45
 
 Légende de nature : **[R]** réglementaire · **[M]** pratique de marché · **[H]** hypothèse du projet.
@@ -36,6 +36,16 @@ Aucun paramètre méthodologique ou réglementaire n'est une constante dans le c
 - `RegulatoryParameterSet` (#23) : paramètres réglementaires datés (output floor, BA-CVA, CCF, transitoires, grands risques).
 
 Toute modification passe par une PR revue par le Lead et l'Expert CCR, crée une nouvelle `MethodVersion` et relance le recalcul de tout l'historique. Aucun endpoint d'administration ne les modifie. Le hash des paramètres est stocké avec chaque résultat.
+
+**Gouvernance des versions de méthode [H]** (décision du PO du 2026-11-05, capacités validées par l'Expert CCR dans #52) :
+
+- chaque version est définie dans un **catalogue de versions** livré dans le code (`MethodVersionCatalog`) : identifiant, paramètres, `parameters_sha256`, `regulatory_reference_date`. Son contenu n'arrive que par une PR revue ;
+- `PublishMethodVersionCommand` (capacité `ManageMethodVersions`, risk manager) **ne porte qu'un identifiant de version**, jamais de paramètre. Le handler charge la définition depuis le catalogue et contrôle son hash ; la commande ne fait que créer la version `Computing` et mettre le recalcul en file, exécuté par le scheduler (`HistoryRecalculationJob`, identité `cr_scheduler`) ;
+- cycle de vie : `Computing` → `PendingApproval` (recalcul complet et contrôles DQ réussis) → `Active` ou `Rejected` ; `Retired` pour l'ancienne version active. Aucun résultat d'une version n'est visible avant son approbation ;
+- la bascule n'est **plus automatique** : `ApproveMethodVersionActivationCommand` (capacité `ApproveMethodVersion`, direction), avec un `sub` différent de celui de la publication (quatre yeux). Après approbation, le pointeur `meta.active_method_version` bascule en une seule transaction ; `cr_scheduler` n'a aucun droit d'écriture sur ce pointeur ;
+- les résultats des versions `Retired` sont conservés ; le retour arrière vers une version `Retired` suit le même circuit à quatre yeux ;
+- **recalcul ciblé après correction d'un snapshot** (décision du PO du 2026-11-05) : `RequestHistoryCorrectionCommand` (capacité `ManageHistoryCorrections`, risk manager) porte une date d'arrêté de la version active et un code motif issu d'une liste fermée, sans paramètre libre, une fois le snapshot corrigé clôturé avec un nouvel `inputs_sha256`. `ApproveHistoryCorrectionCommand` (capacité `ApproveHistoryCorrection`, direction, `sub` différent du demandeur) l'approuve ou la rejette ; seule l'approbation met en file le recalcul de cette date, à version constante, exécuté par le scheduler. L'approbation crée une **annotation obligatoire dans W12** (`meta.risk_event` de type `HistoryCorrection` : date, motif, demandeur, approbateur) : un point corrigé n'est jamais affiché sans elle ;
+- règles d'autorisation et menaces : threat model §7.1, règles R9 à R13, TM-TB3-14 et TM-TB3-15.
 
 ### 1. Gross Commitment, y compris les financements
 
@@ -94,7 +104,7 @@ Règles de restitution [H] :
 **Décision [H]** : PFE à **97,5 %**, unilatérale, unique pour tout le dashboard (W1 tuile « PFE max », W3, W4, W11, PFE stressée).
 
 - **[R]** Aucun texte n'impose le quantile de la PFE : c'est une mesure de gestion. **[M]** 95 %, 97,5 % et 99 % coexistent sur le marché ; 97,5 % est un choix courant. L'argument d'une cohérence avec l'Expected Shortfall FRTB est **retiré** (l'ES est une moyenne de queue de pertes, pas un quantile d'exposition).
-- Le quantile est porté par la `MethodVersion`. La validation au démarrage échoue si le quantile configuré diffère de celui de la `MethodVersion` active. Changer de quantile crée une nouvelle `MethodVersion` et relance le recalcul de l'historique. La liste {95 % ; 97,5 % ; 99 %} ne sert qu'aux tests.
+- Le quantile est porté par la `MethodVersion`. La validation au démarrage compare la `MethodVersion` active **à sa propre définition dans le catalogue de versions** (quantile et `parameters_sha256`) et échoue en cas d'écart. Elle ne compare pas la version active à un quantile configuré globalement : pendant le recalcul d'une nouvelle version (`Computing`), puis pendant son attente d'approbation, l'ancienne version reste active avec son propre quantile et un tel contrôle échouerait. Chaque calcul lit le quantile de la version qu'il produit. Changer de quantile crée une nouvelle `MethodVersion` et relance le recalcul de l'historique. La liste {95 % ; 97,5 % ; 99 %} ne sert qu'aux tests.
 - **Grille d'horizons** (celle de #6 fait foi, #22 s'y aligne), en horizons **relatifs** à la date d'arrêté, identiques sur tout l'historique : quotidienne jusqu'à 2 semaines, hebdomadaire jusqu'à 3 mois, mensuelle jusqu'à 1 an, trimestrielle jusqu'à 5 ans, annuelle ensuite jusqu'à la maturité maximale, plafond 30 ans. S'y ajoutent les points `t − MPOR` et les dates d'échéance et de flux.
 - **[R]** La maille fine sur 1 an sert l'Effective EE (art. 284(5)) et l'Effective EPE (art. 284(6), moyenne sur la première année). La MPOR est d'au moins 10 jours ouvrés hors SFT (art. 285(2)).
 
@@ -224,7 +234,7 @@ Le même seuil d'alerte (défaut 80 %) s'applique au ratio grands risques rappor
   | À partir du 01/01/2033 | n/a | 10 % |
 
   Le texte ouvre une **faculté** (« may ») que le projet active par défaut [H], [M] ; c'est signalé dans l'aide. L'EBA doit remettre d'ici le 31/12/2028 un rapport sur une prolongation au-delà de 2032 (art. 495d(2)) ; la Commission peut légiférer d'ici le 31/12/2031. Le CCF affiché porte son origine, par exemple « CCF 0 % (UCC, transitoire art. 495d) », pour ne pas confondre un 0 transitoire avec une absence de risque.
-- **Date de référence du CCF [H]** : la date de référence réglementaire de la `MethodVersion` (date du recalcul), et non la date d'arrêté ; tout l'historique W12 est recalculé avec le CCF en vigueur à cette date. Le franchissement d'une marche du calendrier (par exemple au 01/01/2030) impose une nouvelle `MethodVersion` ; un contrôle DQ (#19) le signale. À acter avec #26.
+- **Date de référence du CCF [H]** : la date de référence réglementaire de la `MethodVersion` (date du recalcul), et non la date d'arrêté ; tout l'historique W12 est recalculé avec le CCF en vigueur à cette date. Le franchissement d'une marche du calendrier (par exemple au 01/01/2030) impose une nouvelle `MethodVersion` ; un contrôle DQ (#19) le signale. **L'approbation est refusée** (`ApproveMethodVersionActivationCommand`, #26) si une marche du calendrier réglementaire (art. 495d, output floor) est franchie après la `regulatory_reference_date` de la version, c'est-à-dire entre cette date et la date d'approbation : la version serait active avec un CCF déjà périmé ; il faut publier une nouvelle version (#52).
 - **Classement UCC [M]** : le projet applique **par anticipation** le projet final de RTS de l'EBA sur l'art. 111(8) (EBA/RTS/2025/06, remis le 18/08/2025, « not yet applicable »), sous `ClassificationRuleVersion = 1`. Catégorie 5 si et seulement si l'engagement est contractuellement annulable sans condition (art. 5(10), annexe I cat. 5) **et** qu'aucun facteur de contrainte n'est identifié. `CancellationConstraint` = { `None`, `RiskManagementDeficiency`, `CommercialConsideration`, `ReputationalRisk`, `LitigationRisk` }. Si un facteur est identifié, l'élément prend la catégorie qu'il aurait sans le droit d'annulation (catégorie 3 pour une ligne de crédit). Une valeur inconnue ou manquante n'est jamais lue comme `None` : reclassement conservateur en catégorie 3 avec `FinancingDataIssue`. À la publication au JOUE, relecture par l'Expert CCR, version 2 si le texte diffère et recalcul de l'historique.
 - **Crédit documentaire et garanties** (attribut `is_trade_finance` : échéance initiale ≤ 1 an, sans renouvellement automatique, sous-jacent biens ou services, art. 4(1)(80)) :
   - lettre de crédit à caractère de substitut de crédit : C1 (100 %) [R] ;
@@ -284,7 +294,8 @@ Le même seuil d'alerte (défaut 80 %) s'applique au ratio grands risques rappor
 - #23 : BA-CVA (M_NS corrigée, périmètre art. 382, CVA exemptée notionnelle), output floor du §12, section CCF du `RegulatoryParameterSet`.
 - #24 : CVA et DVA seulement, DVA comptable, contributions CVA additives, libellé PD proxy.
 - #25 : Euler du §5.
-- #26 : annotations W12, `regulatory_reference_date`, versioning.
+- #26 : annotations W12, `regulatory_reference_date`, versioning ; catalogue de versions, commande de publication réduite à un identifiant, approbation à quatre yeux et refus d'approbation après une marche du calendrier ; recalcul ciblé après correction d'un snapshot en quatre yeux, avec annotation W12 de type `HistoryCorrection` (#52).
+- #19 : `ManageJobRuns` et `ReadDataQualityDetail` (#52).
 - #27 : mesure du §10 et seuils du §13. #30 et #36 : grands risques du §11.
 - #28 : catalogue du §8. #29 : désignation exclusive des CDS.
 - #43, #44, #45 : financements du §1 et du §14.
@@ -323,6 +334,7 @@ L'Expert CCR a relu les articles sur des sources secondaires (texte consolidé r
 
 - Issue #6 : proposition du Lead, validation de l'Expert CCR, décisions du PO du 2026-11-04, note sur les critères caducs.
 - Issue #45 : spécification des financements et réponses de l'Expert CCR.
+- Issue #52 : gouvernance des versions de méthode et recalcul ciblé (décisions du PO du 2026-11-05, capacités validées par l'Expert CCR). Limites : aucun texte consulté n'impose ces rôles ni les quatre yeux sur une version de méthode (hypothèse du projet) ; les art. 286 à 288 du CRR relèvent de l'IMM (analogie) et ont été lus sur une version britannique, à confronter à EUR-Lex ; l'art. 76(5) de la CRD n'est pas vérifié.
 - [Règlement (UE) 2024/1623 (CRR3) – EUR-Lex](https://eur-lex.europa.eu/eli/reg/2024/1623/oj), [Règlement (UE) 2019/876 (CRR2) – EUR-Lex](https://eur-lex.europa.eu/eli/reg/2019/876/oj), [Règlement (UE) n° 575/2013 (CRR) – EUR-Lex](https://eur-lex.europa.eu/eli/reg/2013/575/oj).
 - [BCBS MAR50](https://www.bis.org/basel_framework/chapter/MAR/50.htm), [BCBS d588](https://www.bis.org/bcbs/publ/d588.htm).
 - [Tasche, « Capital Allocation to Business Units and Sub-Portfolios: the Euler Principle »](https://arxiv.org/abs/0708.2542).
