@@ -1,6 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 
-namespace CounterpartyRisk.SharedKernel.Results;
+namespace CounterpartyRisk.Domain.Contracts.Results;
 
 /// <summary>
 /// Category of an expected failure. The API layer maps it to an HTTP status

@@ -19,6 +19,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\CounterpartyRisk.SharedKernel\CounterpartyRisk.SharedKernel.csproj" />
+    <!-- Result and Error live in the BCL-only shared contracts (#5) -->
+    <ProjectReference Include="..\CounterpartyRisk.Domain.Contracts\CounterpartyRisk.Domain.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using CounterpartyRisk.SharedKernel.Application.Messaging;
-using CounterpartyRisk.SharedKernel.Results;
+using CounterpartyRisk.Domain.Contracts.Results;
 using Microsoft.Extensions.Logging;
 
 namespace CounterpartyRisk.SharedKernel.Application.Behaviors;

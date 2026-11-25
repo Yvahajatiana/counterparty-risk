@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CounterpartyRisk.Domain.Contracts\CounterpartyRisk.Domain.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

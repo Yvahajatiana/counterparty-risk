@@ -118,9 +118,10 @@ owned by #19 and #10.
 CounterpartyRisk.slnx
 global.json  nuget.config  Directory.Build.props  Directory.Packages.props  .editorconfig
 src/
-  CounterpartyRisk.SharedKernel/               # Entity, AggregateRoot, ValueObject, Result, IDomainEvent, Money
+  CounterpartyRisk.SharedKernel/               # Entity, AggregateRoot, ValueObject, IDomainEvent, data classification
   CounterpartyRisk.SharedKernel.Application/   # in-house CQRS dispatcher + pipeline behaviours
-  CounterpartyRisk.Domain.Contracts/           # shared immutable contracts, BCL only (#5)
+  CounterpartyRisk.Domain.Contracts/           # shared immutable contracts, BCL only (#5): Money, Result,
+                                               # identifiers, measures, aggregation guard, engine interfaces
   Modules/
     ReferenceData/
       CounterpartyRisk.ReferenceData.Domain/
@@ -173,7 +174,9 @@ Notes for the dependent issues:
 3. `*.Infrastructure` depends on its own `*.Application` (and therefore `*.Domain`).
 4. A module calls another module **only** through `Domain.Contracts` interfaces or an integration
    event. `Capital.*` never references `RiskEngine.Domain`, and so on.
-5. `CounterpartyRisk.Domain.Contracts` references the BCL only.
+5. `CounterpartyRisk.Domain.Contracts` references the BCL only. `Money`, `Currency`, `Result` and `Error`
+   live there (moved from SharedKernel in #5, whose data classification package is not BCL), so the
+   engine interfaces can use them; `SharedKernel.Application` references it for `Result`.
 6. `Api` references no `*.Domain`: it exposes DTOs only (no serialised entity, protection against
    API3:2023 BOPLA). It dispatches commands and queries through `IDispatcher` only, so authorisation
    (`AuthorizationBehavior`, #9) and audit (`AuditBehavior`, #10) cannot be bypassed.

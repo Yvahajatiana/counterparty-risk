@@ -525,6 +525,9 @@
           "xunit.v3.runner.common": "[4.0.3]"
         }
       },
+      "counterpartyrisk.domain.contracts": {
+        "type": "Project"
+      },
       "counterpartyrisk.servicedefaults": {
         "type": "Project",
         "dependencies": {
@@ -548,6 +551,7 @@
       "counterpartyrisk.sharedkernel.application": {
         "type": "Project",
         "dependencies": {
+          "CounterpartyRisk.Domain.Contracts": "[1.0.0, )",
           "CounterpartyRisk.SharedKernel": "[1.0.0, )",
           "FluentValidation.DependencyInjectionExtensions": "[12.2.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.15, )",

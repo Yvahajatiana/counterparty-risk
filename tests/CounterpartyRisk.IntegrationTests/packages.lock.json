@@ -778,6 +778,7 @@
       "counterpartyrisk.sharedkernel.application": {
         "type": "Project",
         "dependencies": {
+          "CounterpartyRisk.Domain.Contracts": "[1.0.0, )",
           "CounterpartyRisk.SharedKernel": "[1.0.0, )",
           "FluentValidation.DependencyInjectionExtensions": "[12.2.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.15, )",

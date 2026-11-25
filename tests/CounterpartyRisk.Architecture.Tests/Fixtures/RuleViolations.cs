@@ -99,6 +99,6 @@ namespace CounterpartyRisk.Architecture.Tests.Fixtures.BannedLibrary
 
 namespace CounterpartyRisk.Architecture.Tests.Fixtures.Clean
 {
-    /// <summary>Depends on the shared kernel only.</summary>
-    internal sealed record CleanValue(SharedKernel.Monetary.Money Amount);
+    /// <summary>Depends on the shared contracts only.</summary>
+    internal sealed record CleanValue(Domain.Contracts.Monetary.Money Amount);
 }

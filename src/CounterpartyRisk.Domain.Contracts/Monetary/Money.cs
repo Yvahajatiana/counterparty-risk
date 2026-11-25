@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace CounterpartyRisk.SharedKernel.Monetary;
+namespace CounterpartyRisk.Domain.Contracts.Monetary;
 
 /// <summary>
 /// Monetary amount in a given currency. Always <see cref="decimal"/>: <see cref="double"/>
