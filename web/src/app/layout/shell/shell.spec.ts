@@ -1,24 +1,26 @@
 import { provideRouter } from '@angular/router';
 import { render, screen } from '@testing-library/angular';
-import { routes } from '../../app.routes';
 import { WIDGET_NAV_ITEMS } from '../navigation';
 import { Shell } from './shell';
 
+// No routes: the shell is tested alone, without loading a widget page (and its HTTP calls).
+const providers = [provideRouter([])];
+
 describe('Shell', () => {
-  it('lists the 12 widgets W1 to W12 with their routes', async () => {
-    await render(Shell, { providers: [provideRouter(routes)] });
+  it('lists the 12 widgets with their routes', async () => {
+    await render(Shell, { providers });
 
     const nav = screen.getByRole('navigation', { name: 'Widgets' });
     const links = Array.from(nav.querySelectorAll('a'));
     expect(links.map((link) => link.textContent?.trim())).toEqual(
-      Array.from({ length: 12 }, (_, i) => `W${i + 1}`),
+      WIDGET_NAV_ITEMS.map((item) => item.title),
     );
-    expect(links[0]?.getAttribute('href')).toBe('/w01');
-    expect(links[11]?.getAttribute('href')).toBe('/w12');
+    expect(links[0]?.getAttribute('href')).toBe('/summary');
+    expect(links[11]?.getAttribute('href')).toBe('/history');
   });
 
   it('cycles the theme from the top bar', async () => {
-    const { fixture } = await render(Shell, { providers: [provideRouter(routes)] });
+    const { fixture } = await render(Shell, { providers });
     const button = screen.getByRole('button', { name: /Theme: System/ });
 
     button.click();
@@ -29,8 +31,8 @@ describe('Shell', () => {
 });
 
 describe('WIDGET_NAV_ITEMS', () => {
-  it('uses zero-padded route segments', () => {
-    expect(WIDGET_NAV_ITEMS.map((item) => item.path)).toContain('w09');
+  it('uses unique route segments', () => {
+    expect(new Set(WIDGET_NAV_ITEMS.map((item) => item.path)).size).toBe(12);
     expect(WIDGET_NAV_ITEMS).toHaveLength(12);
   });
 });

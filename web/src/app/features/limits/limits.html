@@ -1,0 +1,42 @@
+<app-widget-header [widget]="widget" [quality]="data.value()?.quality" />
+<app-load-state [loading]="data.isLoading()" [error]="data.error()" />
+
+@if (data.value(); as d) {
+  <p class="cr-text-muted mb-4">
+    Counterparty limits on peak PFE. Thresholds: warning from {{ d.thresholds.warning | pct }},
+    breach from {{ d.thresholds.breach | pct }}. {{ breaches() }} counterparties in breach.
+  </p>
+  <div class="grid gap-4 xl:grid-cols-2">
+    <section class="cr-card" aria-labelledby="utilisation">
+      <h2 id="utilisation" class="cr-section-title">Limit utilisation by counterparty</h2>
+      @if (utilisationChart(); as options) {
+        <app-chart
+          [options]="options"
+          [height]="380"
+          label="Limit utilisation by counterparty, in percent"
+        />
+      }
+    </section>
+    <section class="cr-card" aria-labelledby="history">
+      <h2 id="history" class="cr-section-title">Utilisation over the last 3 months (top 3)</h2>
+      @if (historyChart(); as options) {
+        <app-chart
+          [options]="options"
+          [height]="380"
+          label="Limit utilisation history, in percent"
+        />
+      }
+    </section>
+  </div>
+
+  <section class="cr-card mt-4" aria-labelledby="table">
+    <h2 id="table" class="cr-section-title">Limits and headroom (EUR)</h2>
+    <app-data-grid
+      [rows]="d.rows"
+      [columns]="columns"
+      [getRowId]="rowId"
+      [rowClassRules]="rowClassRules()"
+      label="Limits and headroom by counterparty"
+    />
+  </section>
+}
