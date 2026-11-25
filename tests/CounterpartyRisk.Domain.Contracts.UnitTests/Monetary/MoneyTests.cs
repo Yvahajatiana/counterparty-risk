@@ -1,6 +1,6 @@
-using CounterpartyRisk.SharedKernel.Monetary;
+using CounterpartyRisk.Domain.Contracts.Monetary;
 
-namespace CounterpartyRisk.SharedKernel.UnitTests.Monetary;
+namespace CounterpartyRisk.Domain.Contracts.UnitTests.Monetary;
 
 public class MoneyTests
 {

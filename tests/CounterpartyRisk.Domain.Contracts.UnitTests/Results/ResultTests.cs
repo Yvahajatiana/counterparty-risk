@@ -1,6 +1,6 @@
-using CounterpartyRisk.SharedKernel.Results;
+using CounterpartyRisk.Domain.Contracts.Results;
 
-namespace CounterpartyRisk.SharedKernel.UnitTests.Results;
+namespace CounterpartyRisk.Domain.Contracts.UnitTests.Results;
 
 public class ResultTests
 {

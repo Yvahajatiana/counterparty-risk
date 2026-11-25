@@ -60,6 +60,23 @@ public class LayerDependencyTests
     }
 
     [Fact]
+    public void Domain_contracts_are_immutable()
+    {
+        // Shared contracts cross module boundaries: no public setter (init is allowed) and no
+        // public mutable field, so a consumer can never alter what another module produced.
+        var offenders = SolutionModel.DomainContracts.GetExportedTypes()
+            .SelectMany(t => t.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly)
+                    .Where(p => p.SetMethod is { IsPublic: true } setter && !IsInitOnly(setter))
+                    .Select(p => $"{t.Name}.{p.Name}")
+                .Concat(t.GetFields(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly)
+                    .Where(f => !f.IsInitOnly && !f.IsLiteral && !t.IsEnum)
+                    .Select(f => $"{t.Name}.{f.Name}")))
+            .ToList();
+
+        offenders.ShouldBeEmpty("Domain.Contracts types must be immutable (#5)");
+    }
+
+    [Fact]
     public void Api_does_not_expose_domain_types()
     {
         Rules.ApiWithoutDomain(new RuleScope(SolutionModel.Api)).ShouldPass("Api rule");
@@ -92,6 +109,9 @@ public class LayerDependencyTests
 
         domainReferences.ShouldBeEmpty();
     }
+
+    private static bool IsInitOnly(MethodInfo setter) =>
+        setter.ReturnParameter.GetRequiredCustomModifiers().Contains(typeof(System.Runtime.CompilerServices.IsExternalInit));
 
     private static bool IsBcl(string assemblyName) =>
         assemblyName is "netstandard" or "mscorlib"

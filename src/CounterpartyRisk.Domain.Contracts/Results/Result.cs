@@ -1,4 +1,4 @@
-namespace CounterpartyRisk.SharedKernel.Results;
+namespace CounterpartyRisk.Domain.Contracts.Results;
 
 /// <summary>
 /// Outcome of an operation that can fail in an expected way.

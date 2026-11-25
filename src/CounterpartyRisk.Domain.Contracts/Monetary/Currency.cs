@@ -1,4 +1,4 @@
-namespace CounterpartyRisk.SharedKernel.Monetary;
+namespace CounterpartyRisk.Domain.Contracts.Monetary;
 
 /// <summary>
 /// ISO 4217 alphabetic currency code (three upper-case ASCII letters, e.g. EUR, USD).

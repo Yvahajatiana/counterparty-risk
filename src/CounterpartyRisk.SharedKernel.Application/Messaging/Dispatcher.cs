@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using CounterpartyRisk.SharedKernel.Results;
+using CounterpartyRisk.Domain.Contracts.Results;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CounterpartyRisk.SharedKernel.Application.Messaging;

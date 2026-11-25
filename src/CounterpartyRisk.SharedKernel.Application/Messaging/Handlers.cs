@@ -1,4 +1,4 @@
-using CounterpartyRisk.SharedKernel.Results;
+using CounterpartyRisk.Domain.Contracts.Results;
 
 namespace CounterpartyRisk.SharedKernel.Application.Messaging;
 

@@ -64,6 +64,9 @@
         "resolved": "10.0.13",
         "contentHash": "ZjTwxzhiw2TMEzIbUDkMF0dfDB2I4NQgIfKD0ELu9/5Mk+SRGdKZcD0/lvBrRCAPo6KN2r0BW86MRancoyJkoA=="
       },
+      "counterpartyrisk.domain.contracts": {
+        "type": "Project"
+      },
       "counterpartyrisk.sharedkernel": {
         "type": "Project",
         "dependencies": {

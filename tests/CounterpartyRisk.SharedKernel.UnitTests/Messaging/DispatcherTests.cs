@@ -1,6 +1,6 @@
 using CounterpartyRisk.SharedKernel.Application;
 using CounterpartyRisk.SharedKernel.Application.Messaging;
-using CounterpartyRisk.SharedKernel.Results;
+using CounterpartyRisk.Domain.Contracts.Results;
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
