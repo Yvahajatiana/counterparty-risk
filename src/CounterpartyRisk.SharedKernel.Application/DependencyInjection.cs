@@ -1,6 +1,7 @@
 using System.Reflection;
 using CounterpartyRisk.SharedKernel.Application.Behaviors;
 using CounterpartyRisk.SharedKernel.Application.Messaging;
+using CounterpartyRisk.SharedKernel.Application.Security;
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -10,19 +11,29 @@ namespace CounterpartyRisk.SharedKernel.Application;
 public static class DependencyInjection
 {
     /// <summary>
-    /// Registers the dispatcher, the base pipeline (Logging then Validation) and every
+    /// Registers the dispatcher, the base pipeline (Logging, Authorization, Validation) and every
     /// handler and validator found in <paramref name="assemblies"/>.
-    /// Authorization (#9) and Audit (#10) behaviors are appended after this call.
+    /// Authorization is structural: it cannot be left out, and the host must register an
+    /// <see cref="ICurrentUser"/> (otherwise the first dispatch fails, closed).
+    /// The Audit behavior (#10) is appended after this call.
     /// </summary>
     public static IServiceCollection AddCqrs(this IServiceCollection services, params Assembly[] assemblies)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(assemblies);
 
+        // Fail closed at startup if the authorization matrix is inconsistent (threat model 7.3).
+        Policies.EnsureConsistent();
+
         services.TryAddScoped<IDispatcher, Dispatcher>();
+        services.TryAddScoped<RequestScopeHolder>();
+        services.TryAddScoped<IRequestScope>(sp => sp.GetRequiredService<RequestScopeHolder>());
+        services.TryAddScoped<ILegalEntityScope>(sp => sp.GetRequiredService<RequestScopeHolder>());
 
         // Order matters: the first registered behavior is the outermost one.
+        // Authorization runs before validation so that an unauthorized caller never sees a field error.
         services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>)));
+        services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IPipelineBehavior<,>), typeof(AuthorizationBehavior<,>)));
         services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>)));
 
         foreach (var assembly in assemblies)

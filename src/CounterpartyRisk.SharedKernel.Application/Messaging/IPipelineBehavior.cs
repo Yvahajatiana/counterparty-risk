@@ -9,7 +9,7 @@ public delegate Task<Result<TResult>> RequestContinuation<TResult>();
 
 /// <summary>
 /// Cross-cutting step wrapped around every handler. Behaviors run in registration order
-/// (first registered is outermost): Logging, Validation, Authorization (#9), Audit (#10), handler.
+/// (first registered is outermost): Logging, Authorization (#9), Validation, Audit (#10), handler.
 /// </summary>
 /// <typeparam name="TRequest">Command or query type.</typeparam>
 /// <typeparam name="TResult">Value returned on success.</typeparam>

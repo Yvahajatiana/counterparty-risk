@@ -24,6 +24,13 @@ dotnet run --project src/CounterpartyRisk.AppHost
 The Aspire dashboard lists `postgres`, `keycloak`, `api`, `bff` and `workers`. Only the BFF has external
 endpoints; the API is internal.
 
+Keycloak imports the realm `ccr` from `src/CounterpartyRisk.AppHost/Realms` (no secret in the files). The client
+secret `ccr-bff-client-secret` and the password of the local test users `ccr-test-user-password` are generated on
+first run and persisted in the AppHost user-secrets (visible in the Aspire dashboard parameters). Test users:
+`rm.markets.fr`, `fo.rates.desk`, `dir.risk`, `fin.reg.de`, `rm.nolegal`, `lim.admin.fr`, `aud.internal`.
+The realm is imported only once per data volume: delete the `keycloak` volume after changing it.
+Session, anti-CSRF and proxy contract of the BFF: [security/bff-contract.md](security/bff-contract.md).
+
 ## Layout
 ```
 src/
@@ -41,7 +48,8 @@ tests/
 ## CQRS in a module
 - Requests implement `ICommand<TResult>` / `IQuery<TResult>`; handlers are `internal sealed` and named `*Handler`.
 - Register the module's Application assembly in `AddCqrs(...)` (Api, Workers).
-- Pipeline order: `LoggingBehavior` -> `ValidationBehavior` -> `AuthorizationBehavior` (#9) -> `AuditBehavior` (#10) -> handler.
+- Pipeline order: `LoggingBehavior` -> `AuthorizationBehavior` (#9) -> `ValidationBehavior` -> `AuditBehavior` (#10) -> handler.
+- Every request declares `[RequiresCapability(Capability.X)]` (deny by default); scoped queries implement `IScopedQuery`.
   Behaviors added after `AddCqrs` run in registration order.
 
 ## Dependencies

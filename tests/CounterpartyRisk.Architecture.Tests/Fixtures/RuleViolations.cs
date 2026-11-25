@@ -102,3 +102,22 @@ namespace CounterpartyRisk.Architecture.Tests.Fixtures.Clean
     /// <summary>Depends on the shared contracts only.</summary>
     internal sealed record CleanValue(Domain.Contracts.Monetary.Money Amount);
 }
+
+namespace CounterpartyRisk.Architecture.Tests.Fixtures.HybridRequest
+{
+    /// <summary>Both a command and a query: forbidden, the authorization pipeline could not tell them apart.</summary>
+    [SharedKernel.Application.Security.RequiresCapability(SharedKernel.Application.Security.Capability.ReadExposure)]
+    internal sealed record CommandAndQuery : ICommand<int>, IQuery<int>;
+
+    [SharedKernel.Application.Security.RequiresCapability(SharedKernel.Application.Security.Capability.ReadExposure)]
+    internal sealed record CommandAndQueryWithTwoResults : ICommand<int>, IQuery<string>;
+}
+
+namespace CounterpartyRisk.Architecture.Tests.Fixtures.UndeclaredRequest
+{
+    /// <summary>No [RequiresCapability]: always refused at runtime, flagged at build time.</summary>
+    internal sealed record QueryWithoutCapability : IQuery<int>;
+
+    [SharedKernel.Application.Security.RequiresCapability(SharedKernel.Application.Security.Capability.ReadCapital)]
+    internal sealed record DeclaredQuery : IQuery<int>;
+}
