@@ -59,3 +59,11 @@
   border-right: 1px solid var(--cr-color-border);
   background: var(--cr-color-surface);
 }
+
+.cr-demo-badge {
+  margin-left: 1rem;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid var(--cr-color-on-topbar);
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
