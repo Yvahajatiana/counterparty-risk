@@ -290,3 +290,5 @@ jobs:
           deny-licenses: >-
             AGPL-1.0-only, AGPL-1.0-or-later, AGPL-3.0-only, AGPL-3.0-or-later,
             SSPL-1.0, BUSL-1.1, Elastic-2.0
+          # CI-only tools that are never distributed with the product (ADR-001 licence table)
+          allow-dependencies-licenses: pkg:githubactions/trufflesecurity/trufflehog

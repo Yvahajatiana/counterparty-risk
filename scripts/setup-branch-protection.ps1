@@ -5,7 +5,7 @@
 .DESCRIPTION
     Applies docs/adr/assets/main-ruleset.json to the repository through the GitHub REST API (gh api):
       - pull request required, 0 approval (single shared account), review threads resolved;
-      - required checks: "Gitleaks (full history)", "TruffleHog (verified secrets)", "Forbidden files guard";
+      - required checks: "Secret scan", ".NET CI", "Trivy container scan";
       - linear history, no force-push, no branch deletion;
       - repository admins may bypass only through a pull request (never by a direct push).
     The script is idempotent: it updates the ruleset if one with the same name exists, otherwise creates it.

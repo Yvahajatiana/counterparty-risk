@@ -57,11 +57,12 @@ no `^`/`~`) by the issue that introduces them; Dependabot proposes upgrades afte
 | Scheduling | Quartz.NET (`Quartz.Extensions.Hosting`, persistent job store in PostgreSQL) | 4.7.2 | Apache-2.0 |
 | Identity provider | Keycloak (OIDC, authorization code + PKCE) | 26.8.1 | Apache-2.0 |
 | BFF | In-house BFF: ASP.NET Core OIDC + cookie authentication + YARP | YARP 2.3.0 | MIT |
-| Observability | OpenTelemetry .NET (OTLP to the Aspire dashboard) | 1.20.1 | Apache-2.0 |
+| Observability | OpenTelemetry .NET (OTLP to the Aspire dashboard) | 1.21.0 | Apache-2.0 |
 | Excel / CSV export | ClosedXML (export hardening against formula injection in #31) | 0.105.1 | MIT |
 | Unit / integration tests | xUnit v3 (`xunit.v3`), Shouldly, NSubstitute, Testcontainers.PostgreSql | 4.0.2 / 4.3.0 / 6.2.0 / 4.16.0 | Apache-2.0 / BSD-3-Clause / BSD-3-Clause / MIT |
 | Architecture tests | NetArchTest.Rules | 1.3.2 | MIT |
 | Load tests | Grafana k6 (scripts in `tests/load/`, #39) | v2.3.0 | AGPL-3.0 (tool only, not distributed) |
+| Secret scanning | TruffleHog GitHub Action (CI only, #8) | v3.100.1 | AGPL-3.0 (tool only, not distributed) |
 
 PostgreSQL 18 was evaluated and not retained for V1: the Aspire, Npgsql and Testcontainers ecosystem
 is validated on 17, and 18 brings nothing V1 needs. Moving to 18 is a later ADR.
@@ -240,8 +241,8 @@ merged:
 
 - pull request required, 0 approval required (all agents share one GitHub account, so self-approval
   is impossible), all review threads resolved;
-- required status checks: `Gitleaks (full history)`, `TruffleHog (verified secrets)`,
-  `Forbidden files guard`; build, tests and CodeQL are added when #8 lands;
+- required status checks: `Secret scan` (Gitleaks, TruffleHog and the forbidden files guard in one
+  job), `.NET CI` and `Trivy container scan` (#8);
 - linear history (squash or rebase merges only), force-push and branch deletion forbidden;
 - repository administrators may bypass **only through a pull request** (`bypass_mode: pull_request`):
   direct pushes to `main` stay rejected for everyone, but the single admin account is never locked out
