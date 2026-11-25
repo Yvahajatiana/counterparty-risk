@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Shared PostgreSQL foundation (#11): migrations (schemas, partitions, RLS, grants), legal
+       entity scope interceptor, hardened connection settings. Module DbContexts map their own
+       schema on top of it and never own migrations (ADR-001 rule 7). -->
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CounterpartyRisk.Infrastructure.Persistence.UnitTests" />
+    <InternalsVisibleTo Include="CounterpartyRisk.IntegrationTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
+    <!-- Design-time only (dotnet ef migrations script / bundle), never shipped with the hosts -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CounterpartyRisk.Domain.Contracts\CounterpartyRisk.Domain.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Reviewable SQL of each migration, embedded and loaded by the migration classes -->
+    <EmbeddedResource Include="Migrations\Sql\**\*.sql" LogicalName="Sql/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

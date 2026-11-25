@@ -70,6 +70,15 @@ public class RuleCanaryTests
     }
 
     [Fact]
+    public void Shared_persistence_rule_fails_on_a_module_dependency()
+    {
+        var result = Rules.SharedPersistence(Fixture("CrossModule"));
+
+        result.IsSuccessful.ShouldBeFalse();
+        result.FailingTypeNames.ShouldContain(typeof(Fixtures.CrossModule.CapitalTypeUsingRiskEngine).FullName);
+    }
+
+    [Fact]
     public void Api_rule_fails_when_a_domain_type_is_exposed()
     {
         var result = Rules.ApiWithoutDomain(Fixture("DomainLeak"));

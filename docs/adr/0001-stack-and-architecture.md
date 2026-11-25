@@ -102,15 +102,26 @@ context is a module with its own layers and its own PostgreSQL schema.
 
 | Bounded context | Module folder | Layers | PostgreSQL schema | Main issues | Owner |
 | --- | --- | --- | --- | --- | --- |
-| Reference data (GLEIF, LEI, groups, legal entities, business lines) | `src/Modules/ReferenceData` | Domain, Application, Infrastructure | `refdata` | #15 | agent:back-1 |
+| Reference data (GLEIF, LEI, groups, legal entities, business lines) | `src/Modules/ReferenceData` | Domain, Application, Infrastructure | `ref` | #15 | agent:back-1 |
 | Market data (ECB curves, FX reference rates) | `src/Modules/MarketData` | Domain, Application, Infrastructure | `market` | #16 | agent:back-1 |
 | Portfolio (trades, netting sets, CSA, collateral, limits, financings) | `src/Modules/Portfolio` | Domain, Application, Infrastructure | `portfolio` | #18, #27, #43 | agent:back-2 |
-| Risk engine (exposure cascade, SA-CCR, EE/PFE, CVA, stress, CDS) | `src/Modules/RiskEngine` | Domain, Application, Infrastructure | `risk` | #20-#22, #24, #28, #29 | agent:back-2 |
-| Capital (RWA, output floor, large exposures) | `src/Modules/Capital` | Domain, Application, Infrastructure | `capital` | #23, #30 | agent:back-3 |
+| Risk engine (exposure cascade, SA-CCR, EE/PFE, CVA, stress, CDS) | `src/Modules/RiskEngine` | Domain, Application, Infrastructure | `calc` (results) | #20-#22, #24, #28, #29 | agent:back-2 |
+| Capital (RWA, output floor, large exposures) | `src/Modules/Capital` | Domain, Application, Infrastructure | `calc` (results) | #23, #30 | agent:back-3 |
 | Reporting / query (CQRS read models, exports) | `src/Modules/Reporting` | Application, Infrastructure | `reporting` | #31 | agent:back-3 |
 
 Cross-cutting tables (Quartz job store, audit journal) live in their own schemas (`quartz`, `audit`),
 owned by #19 and #10.
+
+Schema names follow [data-flow.md](../security/data-flow.md#identities) and the database delivered by #11:
+`ref`, `portfolio`, `financing`, `market`, `bench` (published benchmarks), `calc` (all calculation results:
+exposures, SA-CCR, profiles, RWA, CVA, allocations), `reporting`, `meta` (sources, runs, method versions,
+data quality), `staging`, `audit`, `dpkeys`, `session` and `quartz`. They are fixed by the roles and grants of
+`db/roles.sql` and of the migrations, so the earlier names `refdata`, `risk` and `capital` are not used.
+
+**Migrations (#11)**: the shared project `CounterpartyRisk.Infrastructure.Persistence` owns them through an
+entity-less `CounterpartyRiskDbContext`. They are forward-only, reviewable SQL files (EF Core can generate neither
+partitions, nor RLS policies, grants or CHECK lists), run by the migration bundle with `cr_migrator` only. Each
+module `DbContext` maps its own tables with `ExcludeFromMigrations()` and never owns a migration.
 
 #### Repository layout
 

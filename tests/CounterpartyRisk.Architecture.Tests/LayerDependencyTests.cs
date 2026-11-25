@@ -40,6 +40,12 @@ public class LayerDependencyTests
     }
 
     [Fact]
+    public void Shared_persistence_does_not_depend_on_modules_or_hosts()
+    {
+        Rules.SharedPersistence(new RuleScope(SolutionModel.Persistence)).ShouldPass("Shared persistence rule");
+    }
+
+    [Fact]
     public void Shared_kernel_does_not_depend_on_frameworks_or_modules()
     {
         var scope = new RuleScope(SolutionModel.SharedKernel);

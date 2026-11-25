@@ -1,14 +1,22 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Smoke tests run in-memory (no Docker). PostgreSQL tests with Testcontainers and the
-       shared PostgresFixture are added by #11. -->
+  <!-- Smoke tests run in-memory (no Docker). PostgreSQL tests (trait Category=Database) run on
+       Testcontainers with the shared PostgresFixture (#11), in their own CI job. -->
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\CounterpartyRisk.Api\CounterpartyRisk.Api.csproj" />
+    <ProjectReference Include="..\..\src\CounterpartyRisk.Infrastructure.Persistence\CounterpartyRisk.Infrastructure.Persistence.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Role bootstrap and committed idempotent script, used as shipped -->
+    <None Include="..\..\db\roles.sql" Link="Database\Sql\roles.sql" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\db\migrations\idempotent.sql" Link="Database\Sql\idempotent.sql" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

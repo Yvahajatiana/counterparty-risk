@@ -39,7 +39,7 @@ versioned fixtures and from any public screenshot.
 
 | Store / schema | Content | Class | Notes |
 | --- | --- | --- | --- |
-| `ref` | Legal entities, counterparties (GLEIF), groups, business lines, desks, countries, sectors | C0 (GLEIF) / C1 (bank structure) | LEIs and legal names are public; attachment to the synthetic bank is C1 |
+| `ref` | Legal entities, counterparties (GLEIF), groups, business lines, desks, countries, sectors | C0 (GLEIF) / C1 (bank structure) | LEIs and legal names are public; attachment to the synthetic bank is C1. `ref.legal_entity` has no RLS: it is the reference list of scope values itself (no exposure, no amount), the ABAC of #9 decides which entities a user may filter on, and the writer jobs enumerate it to build their all-entities scope (#26) |
 | `portfolio` | Netting sets, CSA, trades, collateral, limits, thresholds | C1 | RLS `FORCE`; limit tables written by the API through `cr_limit_writer` only |
 | `portfolio.limit_change_request` | Pending and decided limit changes, maker and checker `sub` | C1-PD | RLS `FORCE` + `WITH CHECK`; a pending change never feeds W4 |
 | `financing` | Facilities, drawings, guarantees, collateral received | C1 | RLS `FORCE` + `WITH CHECK`, `lineage = Synthetic` |
@@ -48,6 +48,7 @@ versioned fixtures and from any public screenshot.
 | `calc` | Exposure, SA-CCR, profiles, RWA, CVA, allocation, financing results | C1 | RLS, `method_version_id` mandatory |
 | `reporting` | Read models per widget | C1 | RLS / views in `security_invoker` |
 | `meta` | Data sources and licences, ingestion runs, method versions and their approvals, history correction requests, job run requests, DQ results, events | C0 / C1; publisher, approver and requester `sub` C1-PD | No row content in ingestion logs; governance tables written by `cr_governance_writer` only (#52) |
+| `meta.data_source` | Sources, licence, attribution, redistribution flag | C0 | Seeded by the migrations only; no service identity writes it | Registry of the monthly partitioned tables, applied migrations | C0 | Not granted to any service identity; read by the `SECURITY DEFINER` partition functions and the migration bundle only (#11) |
 | `staging` | Unlogged load tables | Same class as the source | Truncated after each run |
 | `quartz` | Job definitions, triggers, run status | C1 | Role `cr_scheduler` only; no secret in job data |
 | `audit` | Audit events | C1-PD | INSERT-only, HMAC chain (key outside PostgreSQL), head anchored externally, monthly partitions, 5-year retention |
