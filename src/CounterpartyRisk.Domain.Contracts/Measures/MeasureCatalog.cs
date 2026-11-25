@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using CounterpartyRisk.Domain.Contracts.Results;
 
 namespace CounterpartyRisk.Domain.Contracts.Measures;
@@ -16,16 +17,23 @@ public sealed record MeasureDefinition(
 /// </summary>
 public static class MeasureCatalog
 {
-    private static readonly HashSet<ExposureNature> Ccr = [ExposureNature.Ccr];
-    private static readonly HashSet<ExposureNature> Financing = [ExposureNature.Financing];
-    private static readonly HashSet<ExposureNature> Both = [ExposureNature.Ccr, ExposureNature.Financing];
-    private static readonly HashSet<RegulatoryApproach> None = [];
-    private static readonly HashSet<RegulatoryApproach> SaCcr = [RegulatoryApproach.SaCcr];
-    private static readonly HashSet<RegulatoryApproach> Imm = [RegulatoryApproach.ImmSimulated];
-    private static readonly HashSet<RegulatoryApproach> Ead =
-        [RegulatoryApproach.SaCcr, RegulatoryApproach.Fccm, RegulatoryApproach.SaCreditRisk, RegulatoryApproach.CemHistorical];
+    private static readonly FrozenSet<ExposureNature> Ccr =
+        FrozenSet.Create<ExposureNature>(ExposureNature.Ccr);
+    private static readonly FrozenSet<ExposureNature> Financing =
+        FrozenSet.Create<ExposureNature>(ExposureNature.Financing);
+    private static readonly FrozenSet<ExposureNature> Both =
+        FrozenSet.Create<ExposureNature>(ExposureNature.Ccr, ExposureNature.Financing);
+    private static readonly FrozenSet<RegulatoryApproach> None = FrozenSet<RegulatoryApproach>.Empty;
+    private static readonly FrozenSet<RegulatoryApproach> SaCcr =
+        FrozenSet.Create<RegulatoryApproach>(RegulatoryApproach.SaCcr);
+    private static readonly FrozenSet<RegulatoryApproach> Imm =
+        FrozenSet.Create<RegulatoryApproach>(RegulatoryApproach.ImmSimulated);
+    private static readonly FrozenSet<RegulatoryApproach> Ead =
+        FrozenSet.Create<RegulatoryApproach>(
+            RegulatoryApproach.SaCcr, RegulatoryApproach.Fccm, RegulatoryApproach.SaCreditRisk, RegulatoryApproach.CemHistorical);
 
-    private static readonly Dictionary<MeasureCode, MeasureDefinition> Definitions = new MeasureDefinition[]
+    // Frozen collections: callers cannot cast them back to a mutable type and alter validation.
+    private static readonly FrozenDictionary<MeasureCode, MeasureDefinition> Definitions = new MeasureDefinition[]
     {
         new(MeasureCode.GrossNotional, MeasureFamily.CurrentExposure, ExposureLevel.Notional, Ccr, None),
         new(MeasureCode.GrossPositiveMtm, MeasureFamily.CurrentExposure, ExposureLevel.GrossBeforeCrm, Ccr, None),
@@ -47,7 +55,7 @@ public static class MeasureCatalog
         new(MeasureCode.Drawn, MeasureFamily.Accounting, ExposureLevel.Drawn, Financing, None),
         new(MeasureCode.Undrawn, MeasureFamily.Accounting, ExposureLevel.Undrawn, Financing, None),
         new(MeasureCode.TotalCommitment, MeasureFamily.Accounting, ExposureLevel.TotalCommitment, Financing, None),
-    }.ToDictionary(d => d.Code);
+    }.ToFrozenDictionary(d => d.Code);
 
     public static IReadOnlyCollection<MeasureDefinition> All => Definitions.Values;
 

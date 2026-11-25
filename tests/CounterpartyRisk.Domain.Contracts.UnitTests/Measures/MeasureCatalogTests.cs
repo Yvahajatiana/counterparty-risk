@@ -45,6 +45,18 @@ public class MeasureCatalogTests
     }
 
     [Fact]
+    public void Catalog_sets_cannot_be_mutated_by_callers()
+    {
+        var definition = MeasureCatalog.Find(MeasureCode.ExpectedExposure).Value;
+
+        definition.Natures.ShouldNotBeAssignableTo<HashSet<ExposureNature>>();
+        Should.Throw<NotSupportedException>(() => ((ISet<ExposureNature>)definition.Natures).Add(ExposureNature.Financing));
+        Should.Throw<NotSupportedException>(() => ((ICollection<RegulatoryApproach>)definition.Approaches).Add(RegulatoryApproach.SaCcr));
+        MeasureKey.Create(MeasureCode.ExpectedExposure, ExposureNature.Financing, RegulatoryApproach.ImmSimulated)
+            .IsFailure.ShouldBeTrue();
+    }
+
+    [Fact]
     public void A_valid_key_carries_family_and_level()
     {
         var key = MeasureKey.Create(MeasureCode.GrossPositiveMtm, ExposureNature.Ccr).Value;
