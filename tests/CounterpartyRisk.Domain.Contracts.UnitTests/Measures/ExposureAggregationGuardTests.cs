@@ -29,6 +29,24 @@ public class ExposureAggregationGuardTests
         ExposureAggregationGuard.CanAggregate(ccr, financing).IsSuccess.ShouldBeTrue();
     }
 
+    [Fact]
+    public void Rwa_of_ccr_and_financing_can_be_summed()
+    {
+        var ccr = Amount(MeasureCode.RiskWeightedExposure, ExposureNature.Ccr, RegulatoryApproach.SaCcr);
+        var financing = Amount(MeasureCode.RiskWeightedExposure, ExposureNature.Financing, RegulatoryApproach.SaCreditRisk);
+
+        ExposureAggregationGuard.CanAggregate(ccr, financing).IsSuccess.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Large_exposure_values_of_ccr_and_financing_can_be_summed()
+    {
+        var ccr = Amount(MeasureCode.LargeExposureValue, ExposureNature.Ccr);
+        var financing = Amount(MeasureCode.LargeExposureValue, ExposureNature.Financing);
+
+        ExposureAggregationGuard.CanAggregate(ccr, financing).IsSuccess.ShouldBeTrue();
+    }
+
     [Theory]
     [InlineData(MeasureCode.GrossPositiveMtm, MeasureCode.GrossSftExposure)]
     [InlineData(MeasureCode.Drawn, MeasureCode.Undrawn)]

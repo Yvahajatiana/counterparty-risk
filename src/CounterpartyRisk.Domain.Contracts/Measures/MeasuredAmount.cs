@@ -62,9 +62,9 @@ public static class ExposureAggregationGuard
             return Refuse("aggregation.mixed_measures", "Different measures are never summed.");
         }
 
-        if (a.Nature != b.Nature && a.Level is not (ExposureLevel.Ead or ExposureLevel.LargeExposureValue))
+        if (a.Nature != b.Nature && a.Level is not (ExposureLevel.Ead or ExposureLevel.RiskWeighted or ExposureLevel.LargeExposureValue))
         {
-            return Refuse("aggregation.mixed_natures", "Only EAD and large exposure values are summed across CCR and financing.");
+            return Refuse("aggregation.mixed_natures", "Only EAD, RWA and large exposure values are summed across CCR and financing.");
         }
 
         if (a.Approach != b.Approach && !BothRegulatoryEad(a, b))
@@ -91,7 +91,7 @@ public static class ExposureAggregationGuard
     }
 
     private static bool BothRegulatoryEad(MeasureKey a, MeasureKey b) =>
-        a.Level is ExposureLevel.Ead or ExposureLevel.LargeExposureValue or ExposureLevel.RiskWeighted
+        a.Level is ExposureLevel.Ead or ExposureLevel.RiskWeighted
         && a.Level == b.Level
         && a.Approach is { } x && RegulatoryEadApproaches.Contains(x)
         && b.Approach is { } y && RegulatoryEadApproaches.Contains(y);
