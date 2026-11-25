@@ -1,5 +1,7 @@
 using CounterpartyRisk.SharedKernel.Application;
 using CounterpartyRisk.SharedKernel.Application.Messaging;
+using CounterpartyRisk.SharedKernel.Application.Security;
+using CounterpartyRisk.SharedKernel.UnitTests.Security;
 using CounterpartyRisk.Domain.Contracts.Results;
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
@@ -75,36 +77,6 @@ public class DispatcherTests
         var error = result.Error.ShouldBeOfType<ValidationError>();
         error.Errors.ShouldHaveSingleItem().Field.ShouldBe(nameof(DoubleCommand.Value));
         recorder.Calls.ShouldNotContain("handler:created");
-    }
-
-    [Fact]
-    public async Task Request_that_is_both_command_and_query_reaches_the_right_handler()
-    {
-        using var provider = BuildProvider();
-        using var scope = provider.CreateScope();
-        var dispatcher = scope.ServiceProvider.GetRequiredService<IDispatcher>();
-        var request = new HybridRequest();
-
-        var viaCommand = await dispatcher.Send(request, TestContext.Current.CancellationToken);
-        var viaQuery = await dispatcher.Query(request, TestContext.Current.CancellationToken);
-
-        viaCommand.Value.ShouldBe("command");
-        viaQuery.Value.ShouldBe("query");
-    }
-
-    [Fact]
-    public async Task Request_with_two_result_types_uses_one_wrapper_per_result_type()
-    {
-        using var provider = BuildProvider();
-        using var scope = provider.CreateScope();
-        var dispatcher = scope.ServiceProvider.GetRequiredService<IDispatcher>();
-        var request = new MixedRequest();
-
-        var viaCommand = await dispatcher.Send(request, TestContext.Current.CancellationToken);
-        var viaQuery = await dispatcher.Query(request, TestContext.Current.CancellationToken);
-
-        viaCommand.Value.ShouldBe(1);
-        viaQuery.Value.ShouldBe("query");
     }
 
     [Fact]
@@ -185,15 +157,17 @@ public class DispatcherTests
         services.AddCqrs(typeof(DispatcherTests).Assembly);
 
         services.Count(d => d.ServiceType == typeof(ICommandHandler<DoubleCommand, int>)).ShouldBe(1);
-        services.Count(d => d.ServiceType == typeof(IPipelineBehavior<,>)).ShouldBe(2);
+        // Logging, Authorization, Validation
+        services.Count(d => d.ServiceType == typeof(IPipelineBehavior<,>)).ShouldBe(3);
     }
 
-    private static ServiceProvider BuildProvider(Action<IServiceCollection>? configure = null)
+    internal static ServiceProvider BuildProvider(Action<IServiceCollection>? configure = null, AuthenticatedUser? user = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton<LogRecords>();
         services.AddSingleton(typeof(ILogger<>), typeof(RecordingLogger<>));
         services.AddScoped<CallRecorder>();
+        services.AddSingleton<ICurrentUser>(new FixedCurrentUser(user ?? TestUsers.RiskManagerFr()));
         services.AddCqrs(typeof(DispatcherTests).Assembly);
         configure?.Invoke(services);
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
@@ -205,23 +179,26 @@ public sealed class CallRecorder
     public List<string> Calls { get; } = [];
 }
 
+[RequiresCapability(Capability.ReadExposure)]
 public sealed record DoubleCommand(int Value) : ICommand<int>;
 
+[RequiresCapability(Capability.ReadExposure)]
 public sealed record EchoQuery(string Text) : IQuery<string>;
 
+[RequiresCapability(Capability.ReadExposure)]
 public sealed record NoOpCommand : ICommand;
 
+[RequiresCapability(Capability.ReadExposure)]
 public sealed record OrphanQuery : IQuery<int>;
 
+[RequiresCapability(Capability.ReadExposure)]
 public sealed record SecretCommand(string Secret) : ICommand<int>;
 
+[RequiresCapability(Capability.ReadExposure)]
 public sealed record CancellableQuery : IQuery<int>;
 
+[RequiresCapability(Capability.ReadExposure)]
 public sealed record TimedOutQuery : IQuery<int>;
-
-public sealed record HybridRequest : ICommand<string>, IQuery<string>;
-
-public sealed record MixedRequest : ICommand<int>, IQuery<string>;
 
 public sealed class LogRecords
 {
@@ -271,30 +248,6 @@ internal sealed class NoOpCommandHandler : ICommandHandler<NoOpCommand, Unit>
 {
     public Task<Result<Unit>> Handle(NoOpCommand command, CancellationToken cancellationToken) =>
         Task.FromResult(Result.Success(Unit.Value));
-}
-
-internal sealed class HybridCommandHandler : ICommandHandler<HybridRequest, string>
-{
-    public Task<Result<string>> Handle(HybridRequest command, CancellationToken cancellationToken) =>
-        Task.FromResult(Result.Success("command"));
-}
-
-internal sealed class HybridQueryHandler : IQueryHandler<HybridRequest, string>
-{
-    public Task<Result<string>> Handle(HybridRequest query, CancellationToken cancellationToken) =>
-        Task.FromResult(Result.Success("query"));
-}
-
-internal sealed class MixedCommandHandler : ICommandHandler<MixedRequest, int>
-{
-    public Task<Result<int>> Handle(MixedRequest command, CancellationToken cancellationToken) =>
-        Task.FromResult(Result.Success(1));
-}
-
-internal sealed class MixedQueryHandler : IQueryHandler<MixedRequest, string>
-{
-    public Task<Result<string>> Handle(MixedRequest query, CancellationToken cancellationToken) =>
-        Task.FromResult(Result.Success("query"));
 }
 
 internal sealed class SecretCommandHandler : ICommandHandler<SecretCommand, int>

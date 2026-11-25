@@ -190,8 +190,11 @@ Notes for the dependent issues:
   `IQuery<TResult>`, `ICommandHandler<TCommand, TResult>`, `IQueryHandler<TQuery, TResult>`,
   `IDispatcher`, `IPipelineBehavior<TRequest, TResult>`. Handlers are registered by assembly scanning at
   start-up (a source generator may replace scanning later without changing the interfaces).
-- Pipeline order: `LoggingBehavior` -> `ValidationBehavior` (FluentValidation) ->
-  `AuthorizationBehavior` (#9) -> `AuditBehavior` (#10) -> handler.
+- Pipeline order: `LoggingBehavior` -> `AuthorizationBehavior` (#9) -> `ValidationBehavior` (FluentValidation) ->
+  `AuditBehavior` (#10) -> handler. Authorization runs before validation (Lead decision on #9): an unauthorized
+  caller always gets 403, never a field error that a database-backed validator could use to reveal data.
+- A request is either a command or a query, never both (architecture test), and declares its capabilities
+  with `[RequiresCapability]`; a request without it is refused (deny by default).
 - No notifications / pub-sub in the dispatcher for V1: integration events between modules are
   in-process and explicit (outbox can be added by a later ADR).
 - **Write side**: aggregates loaded and saved with EF Core change tracking, one aggregate per

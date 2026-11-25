@@ -5,6 +5,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\CounterpartyRisk.ServiceDefaults\CounterpartyRisk.ServiceDefaults.csproj" />
     <ProjectReference Include="..\CounterpartyRisk.SharedKernel.Application\CounterpartyRisk.SharedKernel.Application.csproj" />
     <ProjectReference Include="..\Modules\ReferenceData\CounterpartyRisk.ReferenceData.Application\CounterpartyRisk.ReferenceData.Application.csproj" />

@@ -52,6 +52,25 @@ public static class ServiceDefaultsExtensions
         return builder;
     }
 
+    /// <summary>
+    /// Host filtering is configured per environment (AppHost, deployment), never "*" (ASVS 4.1, DNS rebinding):
+    /// outside Development the process refuses to start without an explicit list of host names.
+    /// </summary>
+    public static TBuilder RequireAllowedHosts<TBuilder>(this TBuilder builder)
+        where TBuilder : IHostApplicationBuilder
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        var hosts = (builder.Configuration["AllowedHosts"] ?? string.Empty)
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var valid = hosts.Length > 0 && hosts.All(h => h != "*");
+        if (!valid && !builder.Environment.IsDevelopment())
+        {
+            throw new InvalidOperationException("AllowedHosts must list the expected host names (never \"*\") outside Development.");
+        }
+
+        return builder;
+    }
+
     public static TBuilder ConfigureOpenTelemetry<TBuilder>(this TBuilder builder)
         where TBuilder : IHostApplicationBuilder
     {
@@ -115,7 +134,8 @@ public static class ServiceDefaultsExtensions
     /// <summary>
     /// Maps <c>/health/live</c> (process only) and <c>/health/ready</c> (all checks).
     /// Responses only contain the aggregated status, never exception details.
-    /// These endpoints are internal: the BFF must not proxy them.
+    /// These endpoints are internal: the BFF must not proxy them. They are the only anonymous endpoints
+    /// (the authorization fallback policy of the API and the BFF denies everything else).
     /// </summary>
     public static WebApplication MapDefaultEndpoints(this WebApplication app)
     {
@@ -124,12 +144,12 @@ public static class ServiceDefaultsExtensions
         app.MapHealthChecks(HealthLivePath, new HealthCheckOptions
         {
             Predicate = registration => registration.Tags.Contains(LiveTag),
-        });
+        }).AllowAnonymous();
 
         app.MapHealthChecks(HealthReadyPath, new HealthCheckOptions
         {
             Predicate = _ => true,
-        });
+        }).AllowAnonymous();
 
         return app;
     }

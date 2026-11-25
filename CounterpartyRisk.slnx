@@ -41,6 +41,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CounterpartyRisk.Architecture.Tests/CounterpartyRisk.Architecture.Tests.csproj" />
+    <Project Path="tests/CounterpartyRisk.Bff.IntegrationTests/CounterpartyRisk.Bff.IntegrationTests.csproj" />
     <Project Path="tests/CounterpartyRisk.Domain.Contracts.UnitTests/CounterpartyRisk.Domain.Contracts.UnitTests.csproj" />
     <Project Path="tests/CounterpartyRisk.IntegrationTests/CounterpartyRisk.IntegrationTests.csproj" />
     <Project Path="tests/CounterpartyRisk.SharedKernel.UnitTests/CounterpartyRisk.SharedKernel.UnitTests.csproj" />

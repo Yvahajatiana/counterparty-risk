@@ -36,9 +36,13 @@ internal static partial class SpaHostingExtensions
         return app;
     }
 
-    public static WebApplication MapSpa(this WebApplication app)
+    /// <summary>
+    /// Public assets (index.html with its nonce, content-hashed bundles). Placed before authentication:
+    /// they carry no data, and the authorization fallback policy would otherwise apply to them.
+    /// </summary>
+    public static WebApplication UseSpaStaticFiles(this WebApplication app)
     {
-        var index = new Lazy<string?>(() => ReadIndex(app.Environment));
+        var index = IndexTemplate(app);
 
         // Block direct access to the raw template, which still contains the placeholder.
         app.Use(async (context, next) =>
@@ -63,18 +67,40 @@ internal static partial class SpaHostingExtensions
             },
         });
 
+        return app;
+    }
+
+    /// <summary>Client-side routes of the SPA get index.html; anonymous (the SPA itself calls /bff/user).</summary>
+    public static WebApplication MapSpaFallback(this WebApplication app)
+    {
+        var index = IndexTemplate(app);
         app.MapFallback(context =>
         {
-            // Unknown API routes must not fall back to the SPA.
-            if (context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase))
+            // Unknown API or BFF routes must not fall back to the SPA.
+            if (context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase)
+                || context.Request.Path.StartsWithSegments("/bff", StringComparison.OrdinalIgnoreCase))
             {
                 context.Response.StatusCode = StatusCodes.Status404NotFound;
                 return Task.CompletedTask;
             }
             return WriteIndexAsync(context, index.Value);
-        });
+        }).AllowAnonymous();
 
         return app;
+    }
+
+    private static Lazy<string?> IndexTemplate(WebApplication app)
+    {
+        const string Key = "ccr.spa.index";
+        var properties = ((IApplicationBuilder)app).Properties;
+        if (properties.TryGetValue(Key, out var existing) && existing is Lazy<string?> lazy)
+        {
+            return lazy;
+        }
+
+        var created = new Lazy<string?>(() => ReadIndex(app.Environment));
+        properties[Key] = created;
+        return created;
     }
 
     private static string? ReadIndex(IWebHostEnvironment environment)

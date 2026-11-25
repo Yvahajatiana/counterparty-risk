@@ -2,6 +2,9 @@
 #   docker compose up --build -d   then open http://localhost:8080
 #   docker compose down
 # The Api, PostgreSQL and Keycloak join this file as the mocks are replaced.
+# Since #9 the BFF requires an OIDC issuer and its client secret (fail closed, even for the mocks):
+# export CCR_OIDC_AUTHORITY (HTTPS realm URL) and CCR_BFF_CLIENT_SECRET before starting. A Keycloak
+# service in this file is a follow-up; the full local stack runs with the Aspire AppHost.
 name: counterparty-risk
 
 services:
@@ -13,6 +16,11 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Bff__UseMockData: "true"
+      AllowedHosts: localhost
+      Authentication__Authority: ${CCR_OIDC_AUTHORITY:?set CCR_OIDC_AUTHORITY to the realm URL}
+      Authentication__ClientSecret: ${CCR_BFF_CLIENT_SECRET:?set CCR_BFF_CLIENT_SECRET}
+      # Demo only: key ring on tmpfs, sessions are lost on restart (PostgreSQL key ring with #11).
+      Bff__DataProtection__KeysPath: /tmp/dpkeys
     ports:
       # Loopback only: the demo is not exposed on the network.
       - "127.0.0.1:8080:8080"

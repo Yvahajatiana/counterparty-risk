@@ -1,0 +1,92 @@
+{
+  "realm": "ccr",
+  "users": [
+    {
+      "username": "rm.markets.fr",
+      "enabled": true,
+      "firstName": "Risk",
+      "lastName": "Manager FR",
+      "attributes": {
+        "ccr_legal_entities": ["CCRSYNTHPARENTFR0057"],
+        "ccr_business_lines": ["MARKETS"]
+      },
+      "realmRoles": ["ccr-risk-manager"],
+      "requiredActions": [],
+      "credentials": [{ "type": "password", "value": "${CCR_TEST_USER_PASSWORD}", "temporary": false }]
+    },
+    {
+      "username": "fo.rates.desk",
+      "enabled": true,
+      "firstName": "Front Office",
+      "lastName": "Rates Desk",
+      "attributes": {
+        "ccr_legal_entities": ["CCRSYNTHPARENTFR0057"],
+        "ccr_business_lines": ["MARKETS"]
+      },
+      "realmRoles": ["ccr-front-office"],
+      "requiredActions": [],
+      "credentials": [{ "type": "password", "value": "${CCR_TEST_USER_PASSWORD}", "temporary": false }]
+    },
+    {
+      "username": "dir.risk",
+      "enabled": true,
+      "firstName": "Direction",
+      "lastName": "Risk",
+      "attributes": {
+        "ccr_legal_entities": ["*"],
+        "ccr_business_lines": ["*"]
+      },
+      "realmRoles": ["ccr-direction"],
+      "requiredActions": [],
+      "credentials": [{ "type": "password", "value": "${CCR_TEST_USER_PASSWORD}", "temporary": false }]
+    },
+    {
+      "username": "fin.reg.de",
+      "enabled": true,
+      "firstName": "Finance",
+      "lastName": "Regulatory DE",
+      "attributes": {
+        "ccr_legal_entities": ["CCRSYNTHSUBSIDDE0022"],
+        "ccr_business_lines": ["*"]
+      },
+      "realmRoles": ["ccr-finance"],
+      "requiredActions": [],
+      "credentials": [{ "type": "password", "value": "${CCR_TEST_USER_PASSWORD}", "temporary": false }]
+    },
+    {
+      "username": "rm.nolegal",
+      "enabled": true,
+      "firstName": "Risk",
+      "lastName": "Manager Without Entity",
+      "attributes": {
+        "ccr_business_lines": ["MARKETS"]
+      },
+      "realmRoles": ["ccr-risk-manager"],
+      "requiredActions": [],
+      "credentials": [{ "type": "password", "value": "${CCR_TEST_USER_PASSWORD}", "temporary": false }]
+    },
+    {
+      "username": "lim.admin.fr",
+      "enabled": true,
+      "firstName": "Limit",
+      "lastName": "Administrator FR",
+      "attributes": {
+        "ccr_legal_entities": ["CCRSYNTHPARENTFR0057"],
+        "ccr_business_lines": ["*"]
+      },
+      "realmRoles": ["ccr-limit-admin"],
+      "requiredActions": [],
+      "credentials": [{ "type": "password", "value": "${CCR_TEST_USER_PASSWORD}", "temporary": false }]
+    },
+    {
+      "username": "aud.internal",
+      "enabled": true,
+      "firstName": "Internal",
+      "lastName": "Auditor",
+      "attributes": {},
+      "realmRoles": ["ccr-auditor"],
+      "requiredActions": [],
+      "credentials": [{ "type": "password", "value": "${CCR_TEST_USER_PASSWORD}", "temporary": false }]
+    }
+  ]
+}

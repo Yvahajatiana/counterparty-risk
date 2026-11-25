@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- In-memory tests of the BFF session, CSRF and proxy rules (#9): fake identity provider and fake Api, no Docker. -->
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CounterpartyRisk.Bff\CounterpartyRisk.Bff.csproj" />
+  </ItemGroup>
+
+</Project>
