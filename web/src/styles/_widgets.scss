@@ -1,0 +1,85 @@
+// Shared widget layout (cards, section titles) and chart / grid bindings to the design tokens.
+
+.cr-card {
+  padding: 1rem;
+  border: 1px solid var(--cr-color-border);
+  border-radius: 8px;
+  background: var(--cr-color-surface);
+}
+
+.cr-section-title {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+// Highcharts styledMode: map its palette variables onto the tokens (light and dark follow).
+:root {
+  --highcharts-background-color: var(--cr-color-surface);
+  --highcharts-neutral-color-100: var(--cr-color-text);
+  --highcharts-neutral-color-80: var(--cr-color-text);
+  --highcharts-neutral-color-60: var(--cr-color-text-muted);
+  --highcharts-neutral-color-40: var(--cr-color-text-muted);
+  --highcharts-neutral-color-20: var(--cr-color-border);
+  --highcharts-neutral-color-10: var(--cr-color-border);
+  --highcharts-neutral-color-5: var(--cr-color-surface-alt);
+  --highcharts-neutral-color-3: var(--cr-color-surface-alt);
+  --highcharts-color-0: var(--cr-series-1);
+  --highcharts-color-1: var(--cr-series-2);
+  --highcharts-color-2: var(--cr-series-3);
+  --highcharts-color-3: var(--cr-series-4);
+  --highcharts-color-4: var(--cr-series-5);
+  --highcharts-color-5: var(--cr-series-6);
+}
+
+.highcharts-container {
+  font-family: var(--cr-font-family);
+}
+
+.highcharts-point.cr-point-reduction {
+  fill: var(--cr-series-2);
+  stroke: var(--cr-series-2);
+}
+
+.highcharts-point.cr-point-sum {
+  fill: var(--cr-color-primary);
+  stroke: var(--cr-color-primary);
+}
+
+.highcharts-point.cr-point-ok {
+  fill: var(--cr-status-ok);
+}
+
+.highcharts-point.cr-point-warn {
+  fill: var(--cr-status-warn);
+}
+
+.highcharts-point.cr-point-breach {
+  fill: var(--cr-status-breach);
+}
+
+.highcharts-plot-line.cr-plotline-warn {
+  stroke: var(--cr-status-warn);
+  stroke-dasharray: 4 3;
+  stroke-width: 2px;
+}
+
+.highcharts-plot-line.cr-plotline-breach {
+  stroke: var(--cr-status-breach);
+  stroke-width: 2px;
+}
+
+.highcharts-plot-line.cr-plotline-event {
+  stroke: var(--cr-color-text-muted);
+  stroke-dasharray: 2 3;
+  stroke-width: 1px;
+}
+
+// AG Grid rows coloured by limit utilisation (left marker, text keeps its contrast).
+.ag-row.cr-row-breach {
+  box-shadow: inset 4px 0 0 var(--cr-status-breach);
+}
+
+.ag-row.cr-row-warn {
+  box-shadow: inset 4px 0 0 var(--cr-status-warn);
+}

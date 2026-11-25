@@ -44,7 +44,8 @@ function buildCsp(nonce) {
     "form-action 'self'",
     "frame-ancestors 'none'",
     "require-trusted-types-for 'script'",
-    'trusted-types angular',
+    // Keep in sync with the BFF CSP (SpaHostingExtensions.cs).
+    'trusted-types angular highcharts',
   ].join('; ');
 }
 

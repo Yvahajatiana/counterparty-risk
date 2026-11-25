@@ -13,7 +13,7 @@ const THEME_LABELS: Record<ThemeMode, string> = {
   dark: 'Dark',
 };
 
-/** Application shell: top bar and side navigation (W1-W12). Content is added by #13. */
+/** Application shell: top bar and side navigation of the 12 widgets. */
 @Component({
   selector: 'app-shell',
   imports: [

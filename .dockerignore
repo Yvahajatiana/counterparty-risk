@@ -1,0 +1,16 @@
+# Keep the build context small and free of secrets or local documents.
+**/bin/
+**/obj/
+**/node_modules/
+web/dist/
+web/.angular/
+web/coverage/
+.git/
+.claude/
+.vs/
+.vscode/
+**/*.user
+**/.env
+**/*.pdf
+docs/
+**/*Expression des besoins*.md
