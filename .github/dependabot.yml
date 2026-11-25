@@ -10,6 +10,7 @@ updates:
       interval: "weekly"
     groups:
       actions:
+        update-types: ["minor", "patch"]
         patterns: ["*"]
 
   # .NET solution (Central Package Management, see ADR-001 and #7)
@@ -40,7 +41,8 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 10
     groups:
-      # Angular framework and tooling packages must move together (exact peer versions)
+      # Angular framework and tooling packages must move together (exact peer versions), majors
+      # included: this is the only group that is not limited to minor and patch updates
       angular:
         patterns: ["@angular/*", "@angular-devkit/*", "@schematics/angular", "angular-eslint"]
       npm-minor-patch:
@@ -64,4 +66,5 @@ updates:
       interval: "weekly"
     groups:
       docker:
+        update-types: ["minor", "patch"]
         patterns: ["*"]
