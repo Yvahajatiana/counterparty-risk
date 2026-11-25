@@ -54,6 +54,10 @@ updates:
       angular:
         update-types: ["minor", "patch"]
         patterns: ["@angular/*", "angular-eslint", "@angular-eslint/*", "typescript-eslint"]
+      # vitest and its plugins pin each other to the exact same version (peer '5.1.1')
+      vitest:
+        update-types: ["minor", "patch"]
+        patterns: ["vitest", "@vitest/*"]
       npm-minor-patch:
         update-types: ["minor", "patch"]
         patterns: ["*"]
