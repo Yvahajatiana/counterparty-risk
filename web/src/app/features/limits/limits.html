@@ -9,34 +9,42 @@
   <div class="grid gap-4 xl:grid-cols-2">
     <section class="cr-card" aria-labelledby="utilisation">
       <h2 id="utilisation" class="cr-section-title">Limit utilisation by counterparty</h2>
-      @if (utilisationChart(); as options) {
-        <app-chart
-          [options]="options"
-          [height]="380"
-          label="Limit utilisation by counterparty, in percent"
-        />
-      }
+      <app-horizontal-bar-chart
+        heading="Utilisation of the peak PFE limit"
+        level="AfterCollateral"
+        family="Economic"
+        seriesName="Utilisation"
+        [items]="utilisation()"
+        [thresholds]="thresholds()"
+        [height]="380"
+        description="Limit utilisation by counterparty, in percent, with warning and breach thresholds"
+      />
     </section>
     <section class="cr-card" aria-labelledby="history">
       <h2 id="history" class="cr-section-title">Utilisation over the last 3 months (top 3)</h2>
-      @if (historyChart(); as options) {
-        <app-chart
-          [options]="options"
-          [height]="380"
-          label="Limit utilisation history, in percent"
-        />
-      }
+      <app-line-chart
+        heading="Utilisation of the peak PFE limit"
+        level="AfterCollateral"
+        unit="percent"
+        xKind="date"
+        [series]="history()"
+        [limits]="[{ value: thresholds().breach, kind: 'breach', label: 'Limit' }]"
+        [height]="380"
+        description="Limit utilisation history of the three most used limits, in percent"
+      />
     </section>
   </div>
 
-  <section class="cr-card mt-4" aria-labelledby="table">
-    <h2 id="table" class="cr-section-title">Limits and headroom (EUR)</h2>
+  <section class="cr-card mt-4" aria-label="Limits and headroom">
     <app-data-grid
+      heading="Limits and headroom (EUR m)"
+      level="AfterCollateral"
       [rows]="d.rows"
-      [columns]="columns"
+      [columns]="columns()"
       [getRowId]="rowId"
-      [rowClassRules]="rowClassRules()"
-      label="Limits and headroom by counterparty"
+      [rowStatus]="rowStatus()"
+      [exportId]="{ widgetId: 'W4', tableId: 'limits' }"
+      [asOfDate]="d.quality.asOfDate"
     />
   </section>
 }

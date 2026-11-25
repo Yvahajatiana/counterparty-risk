@@ -50,6 +50,36 @@ const FORBIDDEN_DOM_SYNTAX = [
 
 const FORBIDDEN_STORAGE_SYNTAX = forbidMember('^(localStorage|sessionStorage)$', STORAGE_MESSAGE);
 
+// Chart rules of the EDB (#14): no pie or donut chart, a single Y axis per chart.
+const PIE_MESSAGE = 'Pie and donut charts are forbidden (EDB): use bars or a 100 % stacked bar.';
+const PIE_TYPES = '/^(pie|variablepie|variable-pie)$/';
+const FORBIDDEN_CHART_SYNTAX = [
+  { selector: `Property[key.name='type'][value.value=${PIE_TYPES}]`, message: PIE_MESSAGE },
+  { selector: `Property[key.value='type'][value.value=${PIE_TYPES}]`, message: PIE_MESSAGE },
+  { selector: 'ImportDeclaration[source.value=/variable-pie/]', message: PIE_MESSAGE },
+  { selector: 'ImportExpression[source.value=/variable-pie/]', message: PIE_MESSAGE },
+  {
+    selector: "Property[key.name='yAxis'] > ArrayExpression.value",
+    message: 'A chart has a single Y axis (EDB): compare different units with rebase100.',
+  },
+];
+
+// Licences and wrappers (ADR-001 §6, conventions §5): Highcharts only behind the ChartAdapter,
+// AG Grid only through the grid wrapper, never AG Grid Enterprise.
+const ENTERPRISE_IMPORTS = {
+  regex: '^(ag-grid-enterprise|@ag-grid-enterprise/)',
+  message: 'AG Grid Enterprise is forbidden (commercial licence): AG Grid Community only.',
+};
+const HIGHCHARTS_IMPORTS = {
+  regex: '^highcharts(-angular)?(/|$)',
+  message: 'Charts go through the ChartAdapter: use the components of shared/charts (ADR-001).',
+};
+const AG_GRID_IMPORTS = {
+  regex: '^ag-grid-(community|angular)(/|$)',
+  message: 'Tables go through the AG Grid wrapper: use app-data-grid from shared/grid.',
+};
+const restrictedImports = (...patterns) => ['error', { patterns }];
+
 const FORBIDDEN_GLOBALS = ['localStorage', 'sessionStorage'].map((name) => ({
   name,
   message: STORAGE_MESSAGE,
@@ -103,15 +133,35 @@ module.exports = defineConfig([
       'no-implied-eval': 'error',
       'no-new-func': 'error',
       'no-script-url': 'error',
-      'no-restricted-syntax': ['error', ...FORBIDDEN_DOM_SYNTAX, ...FORBIDDEN_STORAGE_SYNTAX],
+      'no-restricted-syntax': [
+        'error',
+        ...FORBIDDEN_DOM_SYNTAX,
+        ...FORBIDDEN_STORAGE_SYNTAX,
+        ...FORBIDDEN_CHART_SYNTAX,
+      ],
       'no-restricted-globals': ['error', ...FORBIDDEN_GLOBALS],
+      'no-restricted-imports': restrictedImports(
+        ENTERPRISE_IMPORTS,
+        HIGHCHARTS_IMPORTS,
+        AG_GRID_IMPORTS,
+      ),
     },
+  },
+  {
+    // The Highcharts implementation of the ChartAdapter, and its lazy loading.
+    files: ['src/app/shared/charts/highcharts/**/*.ts', 'src/app/app.config.ts'],
+    rules: { 'no-restricted-imports': restrictedImports(ENTERPRISE_IMPORTS, AG_GRID_IMPORTS) },
+  },
+  {
+    // The AG Grid Community wrapper.
+    files: ['src/app/shared/grid/**/*.ts'],
+    rules: { 'no-restricted-imports': restrictedImports(ENTERPRISE_IMPORTS, HIGHCHARTS_IMPORTS) },
   },
   {
     // The only place allowed to use web storage, for UI preferences (theme).
     files: ['src/app/core/theme/theme.service.ts', 'src/app/core/theme/theme.service.spec.ts'],
     rules: {
-      'no-restricted-syntax': ['error', ...FORBIDDEN_DOM_SYNTAX],
+      'no-restricted-syntax': ['error', ...FORBIDDEN_DOM_SYNTAX, ...FORBIDDEN_CHART_SYNTAX],
       'no-restricted-globals': 'off',
     },
   },

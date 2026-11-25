@@ -34,11 +34,24 @@
       Variation over the period: {{ v.amount }} EUR ({{ v.percent }})
     </p>
   }
-  @if (chart(); as options) {
-    <app-chart
-      [options]="options"
-      [height]="420"
-      label="Indicator history by as-of date, in EUR millions"
-    />
+  @if (view(); as d) {
+    @if (definition(); as definition) {
+      <app-line-chart
+        [heading]="d.label + ' (EUR m)'"
+        [level]="definition.level"
+        [zoomX]="true"
+        [markers]="false"
+        xKind="date"
+        xTitle="As-of date"
+        [series]="series()"
+        [events]="events()"
+        [height]="420"
+        description="Indicator history by as-of date, in EUR millions, with method change annotations"
+      />
+    } @else {
+      <p role="alert" class="cr-chart-error">
+        Unknown indicator "{{ d.indicator }}": the chart is not displayed.
+      </p>
+    }
   }
 </section>
