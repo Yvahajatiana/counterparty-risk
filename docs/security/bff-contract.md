@@ -14,7 +14,15 @@ access token attached.
 | `.AspNetCore.Correlation.*`, `.AspNetCore.OpenIdConnect.Nonce.*` | `/bff/login` | `HttpOnly; Secure; SameSite=Lax`, short-lived | OIDC handler cookies (documented exception to the `__Host-` prefix, SEC-030). |
 
 Idle timeout 30 min (sliding), absolute lifetime 10 h, at most 3 concurrent sessions per user (the oldest is
-revoked). The access token (5 min) is refreshed server side; a failed refresh ends the session.
+revoked). The access token (5 min) is refreshed server side, once per session even when the SPA sends parallel
+requests; the session ends only when Keycloak rejects the refresh token. If Keycloak is unreachable, a request with
+an expired access token gets 401 but the session is kept.
+
+Login asks for cr_values=mfa outside Development: the realm browser flow `ccr-browser` steps up from LoA 1
+(password, `acr=pwd`) to LoA 2 (OTP, `acr=mfa`); a single-factor login is refused.
+
+Host filtering: `AllowedHosts` is set per environment (the AppHost injects `localhost` for the Api and
+`localhost;host.docker.internal` for the BFF); outside Development it is mandatory and never `*`.
 
 ## Endpoints
 

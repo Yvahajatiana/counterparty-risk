@@ -41,6 +41,7 @@ public class ApiFactory : WebApplicationFactory<Program>
         builder.UseEnvironment("Production");
         builder.UseSetting("Authentication:Authority", Issuer);
         builder.UseSetting("Authentication:MultiFactorAcrValues:0", "mfa");
+        builder.UseSetting("AllowedHosts", "localhost");
 
         builder.ConfigureTestServices(services =>
         {

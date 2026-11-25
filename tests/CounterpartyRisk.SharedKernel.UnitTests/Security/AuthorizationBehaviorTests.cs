@@ -31,6 +31,17 @@ public class AuthorizationBehaviorTests
     }
 
     [Fact]
+    public async Task Undefined_capability_value_is_denied_not_ignored()
+    {
+        // [RequiresCapability((Capability)999, Capability.ReadExposure)]: the unknown value must not be filtered out.
+        var (result, recorder) = await Run(Direction(), new UndefinedCapabilityQuery());
+
+        result.Error.ShouldBe(AuthorizationErrors.Forbidden);
+        recorder.Calls.ShouldBeEmpty();
+        AccessRules.Check(Direction(), [(Capability)999]).ShouldBe(AuthorizationErrors.Forbidden);
+    }
+
+    [Fact]
     public async Task Should_Return403_When_FrontOffice_Calls_Capital_Endpoint()
     {
         var (result, _) = await Run(FrontOfficeFr(), new CapitalQuery());
@@ -244,6 +255,9 @@ public sealed record ExposureQuery(IReadOnlyCollection<string>? LegalEntities, I
 
 public sealed record UndeclaredQuery : IQuery<int>;
 
+[RequiresCapability((Capability)999, Capability.ReadExposure)]
+public sealed record UndefinedCapabilityQuery : IQuery<int>;
+
 [RequiresCapability(Capability.ReadCapital)]
 public sealed record CapitalQuery : IQuery<int>;
 
@@ -275,6 +289,15 @@ internal sealed class ExposureQueryHandler(IRequestScope scope, CallRecorder rec
 internal sealed class UndeclaredQueryHandler(CallRecorder recorder) : IQueryHandler<UndeclaredQuery, int>
 {
     public Task<Result<int>> Handle(UndeclaredQuery query, CancellationToken cancellationToken)
+    {
+        recorder.Calls.Add("handler");
+        return Task.FromResult(Result.Success(1));
+    }
+}
+
+internal sealed class UndefinedCapabilityQueryHandler(CallRecorder recorder) : IQueryHandler<UndefinedCapabilityQuery, int>
+{
+    public Task<Result<int>> Handle(UndefinedCapabilityQuery query, CancellationToken cancellationToken)
     {
         recorder.Calls.Add("handler");
         return Task.FromResult(Result.Success(1));

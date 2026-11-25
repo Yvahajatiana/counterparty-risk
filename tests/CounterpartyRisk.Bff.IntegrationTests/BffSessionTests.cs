@@ -382,6 +382,114 @@ public sealed class BffSessionTests : IDisposable
         response.Headers.Contains("Access-Control-Allow-Origin").ShouldBeFalse();
     }
 
+    [Fact]
+    public async Task Parallel_requests_in_the_refresh_window_refresh_once_and_keep_the_session()
+    {
+        _factory.IdentityProvider.Latency = TimeSpan.FromMilliseconds(150);
+        var jar = await SignIn(expiresInSeconds: 30);
+
+        var responses = await Task.WhenAll(Enumerable.Range(0, 6).Select(i => Send(HttpMethod.Get, $"/api/v1/widgets/w{i}", jar, csrf: true)));
+
+        responses.ShouldAllBe(r => r.StatusCode == HttpStatusCode.OK);
+        // Rotation with no reuse: a second refresh with the same token would be rejected and end the session.
+        _factory.IdentityProvider.Requests.Count(r => r.Uri == BffFactory.TokenEndpoint).ShouldBe(1);
+        _factory.Api.Requests.ShouldAllBe(r => r.Headers["Authorization"] == "Bearer " + _factory.IdentityProvider.RefreshedAccessToken);
+        foreach (var response in responses)
+        {
+            response.Dispose();
+        }
+
+        using var after = await Send(HttpMethod.Get, "/bff/user", jar, csrf: true);
+        after.StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Identity_provider_timeout_keeps_using_a_still_valid_access_token()
+    {
+        _factory.IdentityProvider.TimeOut = true;
+        var jar = await SignIn(expiresInSeconds: 30);
+
+        using var response = await Send(HttpMethod.Get, "/api/v1/widgets/w1", jar, csrf: true);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        _factory.Api.Requests.ShouldHaveSingleItem().Headers["Authorization"].ShouldNotBe("Bearer " + _factory.IdentityProvider.RefreshedAccessToken);
+    }
+
+    [Fact]
+    public async Task Identity_provider_timeout_with_an_expired_token_fails_closed_without_ending_the_session()
+    {
+        _factory.IdentityProvider.TimeOut = true;
+        var jar = await SignIn(expiresInSeconds: -10);
+
+        using var during = await Send(HttpMethod.Get, "/api/v1/widgets/w1", jar, csrf: true);
+        _factory.IdentityProvider.TimeOut = false;
+        using var after = await Send(HttpMethod.Get, "/api/v1/widgets/w1", jar, csrf: true);
+
+        during.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        after.StatusCode.ShouldBe(HttpStatusCode.OK);
+        _factory.Api.Requests.ShouldHaveSingleItem().Headers["Authorization"].ShouldBe("Bearer " + _factory.IdentityProvider.RefreshedAccessToken);
+    }
+
+    [Fact]
+    public async Task Logout_completes_when_the_identity_provider_times_out()
+    {
+        var jar = await SignIn();
+        await LoadAntiforgery(jar);
+        _factory.IdentityProvider.TimeOut = true;
+
+        using var logout = await Logout(jar);
+
+        logout.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        logout.Headers.Contains("Clear-Site-Data").ShouldBeTrue();
+        (await Send(HttpMethod.Get, "/bff/user", jar, csrf: true)).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Login_requests_the_multi_factor_level()
+    {
+        using var response = await Send(HttpMethod.Get, "/bff/login", new CookieJar(), csrf: false);
+
+        response.Headers.Location!.Query.ShouldContain("acr_values=mfa");
+    }
+
+    [Fact]
+    public async Task Replayed_backchannel_logout_token_is_rejected()
+    {
+        await SignIn(sid: "kc-session-4");
+        var token = BffFactory.LogoutToken("kc-session-4");
+
+        using var first = await BackchannelLogout(token);
+        using var replay = await BackchannelLogout(token);
+
+        first.StatusCode.ShouldBe(HttpStatusCode.OK);
+        replay.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Backchannel_logout_signed_with_a_rotated_key_refreshes_the_metadata_once()
+    {
+        var jar = await SignIn(sid: "kc-session-5");
+        using var rotated = RSA.Create(3072);
+        var newKey = new RsaSecurityKey(rotated) { KeyId = "rotated-key" };
+        _factory.Metadata.PendingKey = newKey;
+
+        using var response = await BackchannelLogout(BffFactory.LogoutToken("kc-session-5", key: newKey));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        _factory.Metadata.Refreshes.ShouldBe(1);
+        (await Send(HttpMethod.Get, "/bff/user", jar, csrf: true)).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Unknown_host_header_is_rejected()
+    {
+        using var request = Request(HttpMethod.Get, "/bff/login", new CookieJar(), csrf: false);
+        request.Headers.Host = "evil.example";
+
+        using var response = await _browser.SendAsync(request, Ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
     private async Task<CookieJar> SignIn(string subject = "user-1", string sid = "sid-1", int expiresInSeconds = 300)
     {
         var jar = new CookieJar();
@@ -455,6 +563,16 @@ public sealed class BffStartupTests
     public void Should_Refuse_To_Start_With_Http_Issuer_Outside_Development()
     {
         using var factory = new BffFactory().WithWebHostBuilder(b => b.UseSetting("Authentication:Authority", "http://idp.test/realms/ccr"));
+
+        Should.Throw<Exception>(() => factory.CreateClient());
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("*")]
+    public void Should_Refuse_To_Start_Without_Allowed_Hosts_Outside_Development(string hosts)
+    {
+        using var factory = new BffFactory().WithWebHostBuilder(b => b.UseSetting("AllowedHosts", hosts));
 
         Should.Throw<Exception>(() => factory.CreateClient());
     }

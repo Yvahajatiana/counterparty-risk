@@ -52,6 +52,25 @@ public static class ServiceDefaultsExtensions
         return builder;
     }
 
+    /// <summary>
+    /// Host filtering is configured per environment (AppHost, deployment), never "*" (ASVS 4.1, DNS rebinding):
+    /// outside Development the process refuses to start without an explicit list of host names.
+    /// </summary>
+    public static TBuilder RequireAllowedHosts<TBuilder>(this TBuilder builder)
+        where TBuilder : IHostApplicationBuilder
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        var hosts = (builder.Configuration["AllowedHosts"] ?? string.Empty)
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var valid = hosts.Length > 0 && hosts.All(h => h != "*");
+        if (!valid && !builder.Environment.IsDevelopment())
+        {
+            throw new InvalidOperationException("AllowedHosts must list the expected host names (never \"*\") outside Development.");
+        }
+
+        return builder;
+    }
+
     public static TBuilder ConfigureOpenTelemetry<TBuilder>(this TBuilder builder)
         where TBuilder : IHostApplicationBuilder
     {

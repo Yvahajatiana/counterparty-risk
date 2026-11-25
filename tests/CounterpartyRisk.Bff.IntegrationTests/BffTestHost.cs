@@ -44,6 +44,15 @@ public sealed class BffFactory : WebApplicationFactory<Program>
 
     public TestTimeProvider Time { get; } = new();
 
+    /// <summary>Issuer metadata; a key added with <see cref="RotatingConfigurationManager.PendingKey"/> appears after a refresh.</summary>
+    public RotatingConfigurationManager Metadata { get; } = new(new OpenIdConnectConfiguration
+    {
+        Issuer = Issuer,
+        AuthorizationEndpoint = Issuer + "/protocol/openid-connect/auth",
+        TokenEndpoint = TokenEndpoint,
+        EndSessionEndpoint = EndSessionEndpoint,
+    });
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -53,6 +62,7 @@ public sealed class BffFactory : WebApplicationFactory<Program>
         builder.UseSetting("Authentication:MultiFactorAcrValues:0", "mfa");
         builder.UseSetting("Bff:DataProtection:KeysPath", _keysPath);
         builder.UseSetting("Bff:ApiAddress", "https://api.internal");
+        builder.UseSetting("AllowedHosts", "localhost");
 
         builder.ConfigureTestServices(services =>
         {
@@ -60,16 +70,9 @@ public sealed class BffFactory : WebApplicationFactory<Program>
             services.AddSingleton<IForwarderHttpClientFactory>(new FakeApiClientFactory(Api));
             services.PostConfigure<OpenIdConnectOptions>(OpenIdConnectDefaults.AuthenticationScheme, options =>
             {
-                var configuration = new OpenIdConnectConfiguration
-                {
-                    Issuer = Issuer,
-                    AuthorizationEndpoint = Issuer + "/protocol/openid-connect/auth",
-                    TokenEndpoint = TokenEndpoint,
-                    EndSessionEndpoint = EndSessionEndpoint,
-                };
-                configuration.SigningKeys.Add(SigningKey);
-                options.Configuration = configuration;
-                options.ConfigurationManager = new StaticConfigurationManager<OpenIdConnectConfiguration>(configuration);
+                // Like production: metadata comes from the configuration manager (cached, refreshable).
+                options.Configuration = null;
+                options.ConfigurationManager = Metadata;
                 options.Backchannel = new HttpClient(IdentityProvider);
             });
             services.AddSingleton<IStartupFilter, TestSignInStartupFilter>();
@@ -190,12 +193,58 @@ public sealed class TestTimeProvider : TimeProvider
     public void Advance(TimeSpan delta) => _now += delta;
 }
 
-/// <summary>Token and logout endpoints of the identity provider.</summary>
+/// <summary>Configuration manager whose signing keys change only after <see cref="RequestRefresh"/> (key rotation).</summary>
+public sealed class RotatingConfigurationManager : IConfigurationManager<OpenIdConnectConfiguration>
+{
+    private readonly OpenIdConnectConfiguration _configuration;
+    private bool _refreshRequested;
+
+    public RotatingConfigurationManager(OpenIdConnectConfiguration configuration)
+    {
+        _configuration = configuration;
+        _configuration.SigningKeys.Add(BffFactory.SigningKey);
+    }
+
+    public SecurityKey? PendingKey { get; set; }
+
+    public int Refreshes { get; private set; }
+
+    public Task<OpenIdConnectConfiguration> GetConfigurationAsync(CancellationToken cancel)
+    {
+        if (_refreshRequested && PendingKey is not null)
+        {
+            _configuration.SigningKeys.Add(PendingKey);
+            PendingKey = null;
+        }
+
+        _refreshRequested = false;
+        return Task.FromResult(_configuration);
+    }
+
+    public void RequestRefresh()
+    {
+        Refreshes++;
+        _refreshRequested = true;
+    }
+}
+
+/// <summary>
+/// Token and logout endpoints of the identity provider. Refresh tokens rotate and cannot be reused
+/// (<c>revokeRefreshToken=true</c>, <c>refreshTokenMaxReuse=0</c>), like the realm.
+/// </summary>
 public sealed class FakeIdentityProvider : HttpMessageHandler
 {
+    private readonly ConcurrentDictionary<string, bool> _usedRefreshTokens = new(StringComparer.Ordinal);
+    private int _issued;
+
     public ConcurrentQueue<(string Uri, Dictionary<string, string> Form)> Requests { get; } = new();
 
     public HttpStatusCode TokenStatus { get; set; } = HttpStatusCode.OK;
+
+    /// <summary>Simulates an HttpClient timeout of the identity provider.</summary>
+    public bool TimeOut { get; set; }
+
+    public TimeSpan Latency { get; set; } = TimeSpan.Zero;
 
     public string RefreshedAccessToken { get; set; } = BffFactory.AccessToken("refreshed");
 
@@ -206,15 +255,26 @@ public sealed class FakeIdentityProvider : HttpMessageHandler
             .Select(p => p.Split('=', 2))
             .ToDictionary(p => Uri.UnescapeDataString(p[0]), p => Uri.UnescapeDataString(p.Length > 1 ? p[1].Replace('+', ' ') : string.Empty));
         Requests.Enqueue((request.RequestUri!.ToString(), form));
+        if (TimeOut)
+        {
+            throw new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout.");
+        }
+
+        if (Latency > TimeSpan.Zero)
+        {
+            await Task.Delay(Latency, cancellationToken);
+        }
 
         if (request.RequestUri!.ToString() == BffFactory.TokenEndpoint)
         {
-            if (TokenStatus != HttpStatusCode.OK)
+            var reused = form.TryGetValue("refresh_token", out var presented) && !_usedRefreshTokens.TryAdd(presented, true);
+            if (TokenStatus != HttpStatusCode.OK || reused)
             {
                 return new HttpResponseMessage(TokenStatus) { Content = new StringContent("""{"error":"invalid_grant"}""", Encoding.UTF8, "application/json") };
             }
 
-            var json = $$"""{"access_token":"{{RefreshedAccessToken}}","refresh_token":"rotated","expires_in":300,"token_type":"Bearer"}""";
+            var rotated = "rotated-" + Interlocked.Increment(ref _issued);
+            var json = $$"""{"access_token":"{{RefreshedAccessToken}}","refresh_token":"{{rotated}}","expires_in":300,"token_type":"Bearer"}""";
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
         }
 

@@ -125,6 +125,25 @@ public sealed class RealmConfigurationTests : IDisposable
     }
 
     [Fact]
+    public void Browser_flow_steps_up_from_password_to_otp_with_levels_of_authentication()
+    {
+        Realm.GetProperty("browserFlow").GetString().ShouldBe("ccr-browser");
+        Client.GetProperty("attributes").GetProperty("acr.loa.map").GetString().ShouldBe("""{"pwd":"1","mfa":"2"}""");
+
+        var flows = Realm.GetProperty("authenticationFlows").EnumerateArray().ToDictionary(f => f.GetProperty("alias").GetString()!);
+        var configs = Realm.GetProperty("authenticatorConfig").EnumerateArray().ToDictionary(c => c.GetProperty("alias").GetString()!);
+
+        Executions(flows["ccr-browser"]).ShouldBe([("auth-cookie", "ALTERNATIVE"), ("ccr-browser-forms", "ALTERNATIVE")]);
+        Executions(flows["ccr-browser-forms"]).ShouldBe([("ccr-loa-1", "CONDITIONAL"), ("ccr-loa-2", "CONDITIONAL")]);
+        Executions(flows["ccr-loa-1"]).ShouldBe([("conditional-level-of-authentication", "REQUIRED"), ("auth-username-password-form", "REQUIRED")]);
+        Executions(flows["ccr-loa-2"]).ShouldBe([("conditional-level-of-authentication", "REQUIRED"), ("auth-otp-form", "REQUIRED")]);
+        configs["ccr-loa-1-condition"].GetProperty("config").GetProperty("loa-condition-level").GetString().ShouldBe("1");
+        configs["ccr-loa-2-condition"].GetProperty("config").GetProperty("loa-condition-level").GetString().ShouldBe("2");
+        // The OTP level is never remembered: every step-up asks for a fresh code.
+        configs["ccr-loa-2-condition"].GetProperty("config").GetProperty("loa-max-age").GetString().ShouldBe("0");
+    }
+
+    [Fact]
     public void Client_gets_only_the_required_scopes()
     {
         var client = Client;
@@ -230,6 +249,12 @@ public sealed class RealmConfigurationTests : IDisposable
             u.GetProperty("attributes").TryGetProperty("ccr_legal_entities", out var le) ? le.EnumerateArray().Select(e => e.GetString()!).ToList() : [],
             u.GetProperty("attributes").TryGetProperty("ccr_business_lines", out var bl) ? bl.EnumerateArray().Select(e => e.GetString()!).ToList() : [],
             Strings(u, "requiredActions")));
+
+    private static List<(string, string)> Executions(JsonElement flow) =>
+        [.. flow.GetProperty("authenticationExecutions").EnumerateArray()
+            .OrderBy(e => e.GetProperty("priority").GetInt32())
+            .Select(e => (e.TryGetProperty("flowAlias", out var alias) ? alias.GetString()! : e.GetProperty("authenticator").GetString()!,
+                e.GetProperty("requirement").GetString()!))];
 
     private static List<string> Strings(JsonElement element, string property) =>
         element.TryGetProperty(property, out var array) ? [.. array.EnumerateArray().Select(e => e.GetString()!)] : [];

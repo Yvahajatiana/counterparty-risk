@@ -132,7 +132,9 @@ internal static class BffSecurityExtensions
         TimeProvider timeProvider,
         IHostEnvironment environment)
     {
-        oidc.Authority = auth.Authority;
+        // Normalized: a trailing slash in configuration must not change the metadata address. The issuer itself is
+        // taken from the discovery metadata by the handler.
+        oidc.Authority = auth.Authority.TrimEnd('/');
         oidc.ClientId = auth.ClientId;
         oidc.ClientSecret = auth.ClientSecret;
         oidc.RequireHttpsMetadata = !environment.IsDevelopment();
@@ -165,6 +167,16 @@ internal static class BffSecurityExtensions
         var acceptedAcr = auth.MultiFactorAcrValues.ToFrozenSet(StringComparer.Ordinal);
         oidc.Events = new OpenIdConnectEvents
         {
+            OnRedirectToIdentityProvider = context =>
+            {
+                // Step-up: ask the realm for the OTP level (Conditional Level of Authentication, acr "mfa" = LoA 2).
+                if (auth.RequireMultiFactor && acceptedAcr.Count > 0)
+                {
+                    context.ProtocolMessage.AcrValues = string.Join(' ', auth.MultiFactorAcrValues);
+                }
+
+                return Task.CompletedTask;
+            },
             OnTokenValidated = context =>
             {
                 // SEC-083: a single-factor login is refused outside Development (missing acr = single factor).

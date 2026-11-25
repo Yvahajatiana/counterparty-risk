@@ -16,6 +16,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Bff__UseMockData: "true"
+      AllowedHosts: localhost
       Authentication__Authority: ${CCR_OIDC_AUTHORITY:?set CCR_OIDC_AUTHORITY to the realm URL}
       Authentication__ClientSecret: ${CCR_BFF_CLIENT_SECRET:?set CCR_BFF_CLIENT_SECRET}
       # Demo only: key ring on tmpfs, sessions are lost on restart (PostgreSQL key ring with #11).

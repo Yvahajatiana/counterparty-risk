@@ -49,6 +49,8 @@ var api = builder.AddProject<Projects.CounterpartyRisk_Api>("api")
     .WithReference(db)
     .WithReference(keycloak)
     .WithEnvironment("Authentication__Authority", realmAuthority)
+    // Host names accepted by host filtering: the BFF proxy and the probes call the Api on localhost.
+    .WithEnvironment("AllowedHosts", "localhost")
     .WaitFor(db)
     .WaitFor(keycloak);
 
@@ -58,6 +60,8 @@ var bff = builder.AddProject<Projects.CounterpartyRisk_Bff>("bff")
     .WithReference(keycloak)
     .WithEnvironment("Authentication__Authority", realmAuthority)
     .WithEnvironment("Authentication__ClientSecret", bffClientSecret)
+    // The browser uses localhost; the Keycloak container calls the back-channel logout through host.docker.internal.
+    .WithEnvironment("AllowedHosts", "localhost;host.docker.internal")
     .WaitFor(api)
     .WaitFor(keycloak)
     .WithExternalHttpEndpoints();

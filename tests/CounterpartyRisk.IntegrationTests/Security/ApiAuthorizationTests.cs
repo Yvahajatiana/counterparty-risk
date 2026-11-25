@@ -285,6 +285,41 @@ public sealed class ApiEndpointCoverageTests(ApiFactory factory) : IClassFixture
     }
 
     [Fact]
+    public async Task Trailing_slash_in_the_authority_does_not_break_token_validation()
+    {
+        // The issuer comes from the discovery metadata, not from the configured authority string.
+        using var host = new ApiWithEndpointsFactory().WithWebHostBuilder(b => b.UseSetting("Authentication:Authority", ApiFactory.Issuer + "/"));
+        using var client = host.CreateClient();
+        using var request = Get("/api/v1/test/exposure", Tokens.RiskManagerFr());
+
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("*")]
+    public void Startup_fails_without_allowed_hosts_outside_development(string hosts)
+    {
+        using var broken = new ApiFactory().WithWebHostBuilder(b => b.UseSetting("AllowedHosts", hosts));
+
+        Should.Throw<Exception>(() => broken.CreateClient());
+    }
+
+    [Fact]
+    public async Task Unknown_host_header_is_rejected()
+    {
+        using var client = factory.CreateClient();
+        using var request = Get("/health/live", null);
+        request.Headers.Host = "evil.example";
+
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public void Startup_fails_with_an_http_issuer_outside_development()
     {
         using var broken = new ApiFactory().WithWebHostBuilder(b => b.UseSetting("Authentication:Authority", "http://idp.test/realms/ccr"));

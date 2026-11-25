@@ -36,7 +36,10 @@ internal static class ApiSecurityExtensions
                 ConfigureJwtBearer(jwt, auth.Value, environment));
 
         services.AddHttpContextAccessor();
-        services.AddScoped<ICurrentUser, HttpCurrentUser>();
+        // Built once from the validated options, shared by every request.
+        services.AddSingleton(sp => sp.GetRequiredService<IOptions<ApiAuthenticationOptions>>().Value.ToMultiFactorPolicy());
+        services.AddScoped<HttpCurrentUser>();
+        services.AddScoped<ICurrentUser>(sp => sp.GetRequiredService<HttpCurrentUser>());
         services.AddSingleton<IAuthorizationHandler, CapabilityAuthorizationHandler>();
 
         var baseline = new AuthorizationPolicyBuilder(JwtBearerDefaults.AuthenticationScheme)
@@ -62,7 +65,9 @@ internal static class ApiSecurityExtensions
 
     private static void ConfigureJwtBearer(JwtBearerOptions jwt, ApiAuthenticationOptions auth, IHostEnvironment environment)
     {
-        jwt.Authority = auth.Authority;
+        // Normalized metadata address; the issuer is taken from the discovery metadata (not from this setting),
+        // so a trailing slash in configuration cannot invalidate every token.
+        jwt.Authority = auth.Authority.TrimEnd('/');
         jwt.Audience = auth.Audience;
         jwt.RequireHttpsMetadata = !environment.IsDevelopment();
         jwt.MapInboundClaims = false;
@@ -72,7 +77,6 @@ internal static class ApiSecurityExtensions
         jwt.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
-            ValidIssuer = auth.Authority,
             ValidateAudience = true,
             ValidAudience = auth.Audience,
             ValidateLifetime = true,

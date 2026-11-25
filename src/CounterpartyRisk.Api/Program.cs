@@ -6,6 +6,7 @@ using CounterpartyRisk.SharedKernel.Application;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+builder.RequireAllowedHosts();
 builder.Services.AddDefaultProblemDetails();
 
 // JWT bearer (PS256, audience ccr-api, issuer of realm ccr) and one ABAC policy per capability (#9).

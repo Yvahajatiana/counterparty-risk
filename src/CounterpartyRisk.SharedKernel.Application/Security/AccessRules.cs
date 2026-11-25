@@ -31,7 +31,8 @@ public static class AccessRules
 
         foreach (var capability in capabilities)
         {
-            if (!user.Has(capability))
+            // An undefined value (cast from an int, renamed member) is never granted.
+            if (!Enum.IsDefined(capability) || !user.Has(capability))
             {
                 return AuthorizationErrors.Forbidden;
             }

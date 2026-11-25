@@ -39,6 +39,6 @@ internal static class RequestAuthorization
         Cache.GetOrAdd(requestType, static type => type
             .GetCustomAttributes<RequiresCapabilityAttribute>(inherit: false)
             .SelectMany(a => a.Capabilities)
-            .Where(Enum.IsDefined)
+            // Undefined values are kept on purpose: AccessRules denies them (fail closed).
             .ToFrozenSet());
 }

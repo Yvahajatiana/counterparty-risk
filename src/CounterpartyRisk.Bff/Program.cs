@@ -8,6 +8,7 @@ using CounterpartyRisk.ServiceDefaults;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+builder.RequireAllowedHosts();
 builder.Services.AddDefaultProblemDetails();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));

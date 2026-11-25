@@ -1,6 +1,6 @@
 using CounterpartyRisk.SharedKernel.Application.Security;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.Extensions.Options;
+using System.Security.Claims;
 
 namespace CounterpartyRisk.Api.Security;
 
@@ -9,26 +9,33 @@ namespace CounterpartyRisk.Api.Security;
 /// Used instead of an <c>IClaimsTransformation</c> that would add capability claims: a transformation can
 /// run several times per request and any claim it adds could be confused with a claim of the token.
 /// </summary>
-internal sealed class HttpCurrentUser(IHttpContextAccessor accessor, IOptions<ApiAuthenticationOptions> options) : ICurrentUser
+internal sealed class HttpCurrentUser(IHttpContextAccessor accessor, MultiFactorPolicy multiFactor) : ICurrentUser
 {
+    private ClaimsPrincipal? _principal;
     private AuthenticatedUser? _user;
-    private bool _resolved;
 
-    public AuthenticatedUser? User
+    public AuthenticatedUser? User => Resolve(accessor.HttpContext?.User);
+
+    /// <summary>
+    /// Builds the user once per principal: the authorization handler and the Application layer share it.
+    /// A different principal (re-authentication during the request) is resolved again, never reused.
+    /// </summary>
+    public AuthenticatedUser? Resolve(ClaimsPrincipal? principal)
     {
-        get
+        if (principal is null)
         {
-            if (!_resolved)
-            {
-                _user = AuthenticatedUserFactory.Create(accessor.HttpContext?.User, options.Value.ToMultiFactorPolicy());
-                _resolved = true;
-            }
-
-            return _user;
+            return null;
         }
+
+        if (!ReferenceEquals(principal, _principal))
+        {
+            _user = AuthenticatedUserFactory.Create(principal, multiFactor);
+            _principal = principal;
+        }
+
+        return _user;
     }
 }
-
 /// <summary>Token identity and scope claims are consistent (no incompatible roles, valid scope): 403 otherwise.</summary>
 internal sealed class ValidPrincipalRequirement : IAuthorizationRequirement;
 
@@ -39,16 +46,18 @@ internal sealed class CapabilityRequirement(Capability capability) : IAuthorizat
 }
 
 /// <summary>
-/// Evaluates both requirements against <see cref="ICurrentUser"/>, i.e. the same decision as
+/// Evaluates both requirements on the authorized principal, with the same rules (<see cref="AccessRules"/>) as
 /// <c>AuthorizationBehavior</c> in the Application layer.
 /// </summary>
-internal sealed class CapabilityAuthorizationHandler(IOptions<ApiAuthenticationOptions> options) : IAuthorizationHandler
+internal sealed class CapabilityAuthorizationHandler(IHttpContextAccessor accessor, MultiFactorPolicy multiFactor) : IAuthorizationHandler
 {
     public Task HandleAsync(AuthorizationHandlerContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        // Built from the principal being authorized (set by the policy evaluation), not from a cached value.
-        var user = AuthenticatedUserFactory.Create(context.User, options.Value.ToMultiFactorPolicy());
+        // The principal being authorized, resolved through the per-request user when one is available.
+        var user = accessor.HttpContext?.RequestServices.GetService<HttpCurrentUser>() is { } current
+            ? current.Resolve(context.User)
+            : AuthenticatedUserFactory.Create(context.User, multiFactor);
 
         foreach (var requirement in context.PendingRequirements.ToList())
         {

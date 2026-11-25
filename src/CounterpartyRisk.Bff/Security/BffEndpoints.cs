@@ -1,8 +1,11 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
@@ -131,7 +134,8 @@ internal static partial class BffEndpoints
     private static async Task<IResult> BackchannelLogoutAsync(
         HttpContext context,
         IOptionsMonitor<OpenIdConnectOptions> oidcOptions,
-        ServerSideTicketStore store)
+        ServerSideTicketStore store,
+        IDistributedCache cache)
     {
         if (!context.Request.HasFormContentType)
         {
@@ -147,7 +151,7 @@ internal static partial class BffEndpoints
 
         var oidc = oidcOptions.Get(OpenIdConnectDefaults.AuthenticationScheme);
         var token = await ValidateLogoutTokenAsync(oidc, logoutToken, context.RequestAborted).ConfigureAwait(false);
-        if (token is null)
+        if (token is null || !await TryConsumeJtiAsync(cache, token, context.RequestAborted).ConfigureAwait(false))
         {
             return TypedResults.BadRequest();
         }
@@ -169,31 +173,21 @@ internal static partial class BffEndpoints
     {
         try
         {
-            var configuration = oidc.Configuration
-                ?? await oidc.ConfigurationManager!.GetConfigurationAsync(cancellationToken).ConfigureAwait(false);
-
-            var parameters = new TokenValidationParameters
+            var result = await ValidateOnceAsync(oidc, logoutToken, cancellationToken).ConfigureAwait(false);
+            if (result.Exception is SecurityTokenSignatureKeyNotFoundException)
             {
-                ValidIssuer = configuration.Issuer,
-                ValidAudience = oidc.ClientId,
-                IssuerSigningKeys = configuration.SigningKeys,
-                ValidAlgorithms = [SecurityAlgorithms.RsaSsaPssSha256],
-                // OIDC Back-Channel Logout 1.0: explicit type "logout+jwt"; Keycloak versions that do not set it send "JWT".
-                ValidTypes = ["logout+jwt", "JWT"],
-                RequireSignedTokens = true,
-                RequireExpirationTime = true,
-                ValidateLifetime = true,
-                ClockSkew = TimeSpan.FromSeconds(30),
-            };
+                // Unknown kid: the realm may have rotated its keys. Refresh the metadata once and retry.
+                OidcConfiguration.RequestRefresh(oidc);
+                result = await ValidateOnceAsync(oidc, logoutToken, cancellationToken).ConfigureAwait(false);
+            }
 
-            var result = await new JsonWebTokenHandler().ValidateTokenAsync(logoutToken, parameters).ConfigureAwait(false);
             if (!result.IsValid || result.SecurityToken is not JsonWebToken token)
             {
                 return null;
             }
 
-            // A logout token carries the back-channel logout event, never a nonce, and a sid or a sub.
-            if (token.TryGetClaim("nonce", out _) || !HasBackchannelLogoutEvent(token))
+            // A logout token carries the back-channel logout event and a jti, never a nonce, and a sid or a sub.
+            if (token.TryGetClaim("nonce", out _) || !HasBackchannelLogoutEvent(token) || string.IsNullOrEmpty(token.Id))
             {
                 return null;
             }
@@ -209,6 +203,44 @@ internal static partial class BffEndpoints
         {
             return null;
         }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+    }
+
+    private static async Task<TokenValidationResult> ValidateOnceAsync(OpenIdConnectOptions oidc, string logoutToken, CancellationToken cancellationToken)
+    {
+        var configuration = await OidcConfiguration.GetAsync(oidc, cancellationToken).ConfigureAwait(false);
+        var parameters = new TokenValidationParameters
+        {
+            ValidIssuer = configuration.Issuer,
+            ValidAudience = oidc.ClientId,
+            IssuerSigningKeys = configuration.SigningKeys,
+            ValidAlgorithms = [SecurityAlgorithms.RsaSsaPssSha256],
+            // OIDC Back-Channel Logout 1.0: explicit type "logout+jwt"; Keycloak versions that do not set it send "JWT".
+            ValidTypes = ["logout+jwt", "JWT"],
+            RequireSignedTokens = true,
+            RequireExpirationTime = true,
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromSeconds(30),
+        };
+
+        return await new JsonWebTokenHandler().ValidateTokenAsync(logoutToken, parameters).ConfigureAwait(false);
+    }
+
+    /// <summary>Replay protection: a logout token (jti) is accepted once during its lifetime.</summary>
+    private static async Task<bool> TryConsumeJtiAsync(IDistributedCache cache, JsonWebToken token, CancellationToken cancellationToken)
+    {
+        var key = "ccr:logout-jti:" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token.Issuer + "|" + token.Id)));
+        if (await cache.GetAsync(key, cancellationToken).ConfigureAwait(false) is not null)
+        {
+            return false;
+        }
+
+        var expires = new DateTimeOffset(token.ValidTo, TimeSpan.Zero).AddSeconds(30);
+        await cache.SetAsync(key, [1], new DistributedCacheEntryOptions { AbsoluteExpiration = expires }, cancellationToken).ConfigureAwait(false);
+        return true;
     }
 
     private static bool HasBackchannelLogoutEvent(JsonWebToken token)
@@ -239,8 +271,7 @@ internal static partial class BffEndpoints
     {
         try
         {
-            var configuration = oidc.Configuration
-                ?? await oidc.ConfigurationManager!.GetConfigurationAsync(cancellationToken).ConfigureAwait(false);
+            var configuration = await OidcConfiguration.GetAsync(oidc, cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrEmpty(configuration.EndSessionEndpoint))
             {
                 return;
@@ -269,6 +300,11 @@ internal static partial class BffEndpoints
         }
         catch (InvalidOperationException)
         {
+            LogIdentityProviderLogoutFailed(loggerFactory.CreateLogger(typeof(BffEndpoints)), 0);
+        }
+        catch (OperationCanceledException)
+        {
+            // Timeout of the identity provider: the local logout still completes (204 + Clear-Site-Data).
             LogIdentityProviderLogoutFailed(loggerFactory.CreateLogger(typeof(BffEndpoints)), 0);
         }
     }
