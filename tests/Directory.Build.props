@@ -6,11 +6,22 @@
     <IsTestProject>true</IsTestProject>
     <!-- xUnit v3 test projects are executables running on Microsoft.Testing.Platform (global.json) -->
     <OutputType>Exe</OutputType>
+    <!-- Coverlet settings (filters, format) shared by every test project; a project may point to its own file -->
+    <CoverageConfigFile>$(MSBuildThisFileDirectory)coverlet.testconfig.json</CoverageConfigFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Items are evaluated after all properties, so a value set in the .csproj wins.
+         Copied as <assembly>.testconfig.json, the name read by Microsoft.Testing.Platform and Coverlet. -->
+    <None Remove="coverlet.testconfig.json" />
+    <None Include="$(CoverageConfigFile)" Link="$(MSBuildProjectName).testconfig.json" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="Shouldly" />
+    <!-- Coverlet code coverage for Microsoft.Testing.Platform (MIT), Cobertura output gated in CI (#8) -->
+    <PackageReference Include="coverlet.MTP" />
   </ItemGroup>
 
   <ItemGroup>

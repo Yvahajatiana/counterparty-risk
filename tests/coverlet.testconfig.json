@@ -1,0 +1,14 @@
+{
+  "platformOptions": {
+    "Coverlet": {
+      "include": "[CounterpartyRisk.*]*",
+      "exclude": "[CounterpartyRisk.*Tests]*,[CounterpartyRisk.AppHost]*",
+      "excludeByAttribute": "GeneratedCode,GeneratedCodeAttribute,ExcludeFromCodeCoverage,ExcludeFromCodeCoverageAttribute,CompilerGeneratedAttribute",
+      "excludeByFile": "**/Migrations/*.cs,**/obj/**/*.cs,**/AssemblyReference.cs",
+      "format": "cobertura",
+      "skipAutoProps": true,
+      "deterministicReport": false,
+      "excludeAssembliesWithoutSources": "MissingAll"
+    }
+  }
+}
