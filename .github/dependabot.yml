@@ -1,10 +1,16 @@
 version: 2
 updates:
+  # Every ecosystem groups its minor and patch bumps into ONE weekly PR; major bumps stay separate
+  # so they get a dedicated review. Security updates are grouped the same way.
+
   # GitHub Actions: actions are pinned by commit SHA, Dependabot bumps the SHA and the version comment
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]
 
   # .NET solution (Central Package Management, see ADR-001 and #7)
   - package-ecosystem: "nuget"
@@ -12,17 +18,43 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    groups:
+      nuget-minor-patch:
+        update-types: ["minor", "patch"]
+        patterns: ["*"]
+      nuget-security:
+        applies-to: security-updates
+        patterns: ["*"]
+    ignore:
+      # The platform targets .NET 10 LTS: the 11.x line of the runtime-aligned packages is adopted
+      # together with a target framework upgrade, not package by package.
+      - dependency-name: "Microsoft.Extensions.*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.AspNetCore.*"
+        update-types: ["version-update:semver-major"]
 
   # Angular workspace in /web (ADR-001, #12).
-  # Becomes active once /web/package.json exists; until then Dependabot finds nothing to update.
   - package-ecosystem: "npm"
     directory: "/web"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    groups:
+      # Angular framework and tooling packages must move together (exact peer versions)
+      angular:
+        patterns: ["@angular/*", "@angular-devkit/*", "@schematics/angular", "angular-eslint"]
+      npm-minor-patch:
+        update-types: ["minor", "patch"]
+        patterns: ["*"]
+      npm-security:
+        applies-to: security-updates
+        patterns: ["*"]
+    ignore:
+      # TypeScript majors follow the range supported by the Angular compiler and typescript-eslint
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   # Container images (Dockerfiles, compose files) pinned by tag + digest (#7, #8).
-  # Becomes active once Dockerfiles exist at the root or under /deploy (ADR-001 repository layout).
   # Image tags declared in the Aspire AppHost C# code are not visible to Dependabot (see ADR-001).
   - package-ecosystem: "docker"
     directories:
@@ -30,3 +62,6 @@ updates:
       - "/deploy/**"
     schedule:
       interval: "weekly"
+    groups:
+      docker:
+        patterns: ["*"]
