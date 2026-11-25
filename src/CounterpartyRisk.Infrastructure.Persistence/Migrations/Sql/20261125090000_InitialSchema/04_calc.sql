@@ -101,9 +101,9 @@ CREATE TABLE calc.saccr_addon (
     CONSTRAINT fk_saccr_addon_method FOREIGN KEY (method_version_id) REFERENCES meta.method_version (id),
     CONSTRAINT fk_saccr_addon_source FOREIGN KEY (source_id) REFERENCES meta.data_source (id),
     CONSTRAINT fk_saccr_addon_run FOREIGN KEY (ingestion_run_id) REFERENCES meta.ingestion_run (id),
-    -- Codes of the Expert CCR (Fx, not the ForeignExchange name of SaCcrAssetClass).
+    -- Names of SaCcrAssetClass (Domain.Contracts is the source of truth).
     CONSTRAINT ck_saccr_addon_asset_class
-        CHECK (asset_class IN ('InterestRate', 'Fx', 'Credit', 'Equity', 'Commodity')),
+        CHECK (asset_class IN ('InterestRate', 'ForeignExchange', 'Credit', 'Equity', 'Commodity')),
     CONSTRAINT ck_saccr_addon_amount CHECK (addon >= 0),
     CONSTRAINT ck_saccr_addon_currency CHECK (currency ~ '^[A-Z]{3}$'),
     CONSTRAINT ck_saccr_addon_lineage CHECK (lineage IN ('Real', 'Transformed', 'Synthetic'))

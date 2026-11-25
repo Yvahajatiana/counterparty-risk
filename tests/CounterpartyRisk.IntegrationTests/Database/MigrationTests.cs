@@ -42,6 +42,7 @@ public sealed partial class MigrationTests(PostgresFixture db)
         { "calc.exposure_result", "ck_exposure_result_level", typeof(ExposureLevel), true },
         { "calc.exposure_result", "ck_exposure_result_measure", typeof(MeasureCode), true },
         { "calc.saccr_result", "ck_saccr_result_approach", typeof(RegulatoryApproach), true },
+        { "calc.saccr_addon", "ck_saccr_addon_asset_class", typeof(SaCcrAssetClass), true },
         { "calc.profile_point", "ck_profile_point_measure", typeof(MeasureCode), false },
         { "calc.rwa_result", "ck_rwa_result_approach", typeof(RegulatoryApproach), true },
         { "calc.rwa_result", "ck_rwa_result_exposure_class", typeof(SaExposureClass), true },
