@@ -99,13 +99,15 @@ BEGIN
     -- their own migrations, #43 and #10).
     CREATE TABLE IF NOT EXISTS meta.partitioned_table (
         table_schema varchar(63) NOT NULL,
-        table_name varchar(56) NOT NULL,
+        -- 55 characters at most: the longest partition suffix (_default, _pYYYYMM) adds 8 and the
+        -- PostgreSQL identifier limit is 63; a longer name would be truncated silently and collide.
+        table_name varchar(55) NOT NULL,
         purgeable boolean NOT NULL DEFAULT true,
         min_retention_months integer NOT NULL DEFAULT 13,
         registered_at timestamptz NOT NULL DEFAULT now(),
         CONSTRAINT pk_partitioned_table PRIMARY KEY (table_schema, table_name),
         CONSTRAINT ck_partitioned_table_identifiers
-            CHECK (table_schema ~ '^[a-z][a-z0-9_]*$' AND table_name ~ '^[a-z][a-z0-9_]*$'),
+            CHECK (table_schema ~ '^[a-z][a-z0-9_]{0,62}$' AND table_name ~ '^[a-z][a-z0-9_]{0,54}$'),
         CONSTRAINT ck_partitioned_table_retention CHECK (min_retention_months BETWEEN 1 AND 600),
         -- Audit partitions are only detached by a traced operating procedure (TM-TB4-14).
         CONSTRAINT ck_partitioned_table_audit_not_purgeable CHECK (table_schema <> 'audit' OR NOT purgeable)
@@ -117,6 +119,9 @@ BEGIN
     -- Creates the DEFAULT partition and the monthly partitions [month(p_from), +p_months) of every
     -- registered table. Idempotent. SECURITY DEFINER owned by cr_owner: cr_partition_job only holds
     -- EXECUTE on it and never runs DDL directly (TM-TB4-14). Returns the number of partitions created.
+    -- Rows that already landed in DEFAULT for a missing month are moved into the new partition in the
+    -- same transaction. A table that still fails is skipped (its changes rolled back), recorded in
+    -- meta.risk_event (PartitionMaintenanceFailed) and the other tables are processed.
     CREATE OR REPLACE FUNCTION meta.ensure_partitions(p_from date, p_months integer)
     RETURNS integer
     LANGUAGE plpgsql
@@ -130,7 +135,11 @@ BEGIN
         v_secure boolean;
         v_start date;
         v_month date;
+        v_next date;
         v_name text;
+        v_default text;
+        v_scope text;
+        v_table_created integer;
         v_created integer := 0;
     BEGIN
         IF p_from IS NULL OR p_months IS NULL THEN
@@ -151,41 +160,78 @@ BEGIN
 
         FOR t IN SELECT table_schema, table_name FROM meta.partitioned_table ORDER BY table_schema, table_name
         LOOP
-            v_parent := format('%I.%I', t.table_schema, t.table_name)::regclass;
-            SELECT relrowsecurity INTO v_secure FROM pg_class WHERE oid = v_parent;
+            v_table_created := 0;
+            v_month := NULL;
+            BEGIN
+                v_parent := format('%I.%I', t.table_schema, t.table_name)::regclass;
+                SELECT relrowsecurity INTO v_secure FROM pg_class WHERE oid = v_parent;
 
-            -- DEFAULT partition: must stay empty, a row there means a missing monthly partition.
-            v_name := t.table_name || '_default';
-            IF to_regclass(format('%I.%I', t.table_schema, v_name)) IS NULL THEN
-                EXECUTE format('CREATE TABLE %I.%I PARTITION OF %s DEFAULT', t.table_schema, v_name, v_parent);
-                IF v_secure THEN
-                    PERFORM meta.apply_le_isolation(format('%I.%I', t.table_schema, v_name)::regclass);
+                -- DEFAULT partition: must stay empty, a row there means a missing monthly partition.
+                v_default := t.table_name || '_default';
+                IF to_regclass(format('%I.%I', t.table_schema, v_default)) IS NULL THEN
+                    EXECUTE format('CREATE TABLE %I.%I PARTITION OF %s DEFAULT', t.table_schema, v_default, v_parent);
+                    IF v_secure THEN
+                        PERFORM meta.apply_le_isolation(format('%I.%I', t.table_schema, v_default)::regclass);
+                    END IF;
+                    v_table_created := v_table_created + 1;
                 END IF;
-                v_created := v_created + 1;
-            END IF;
 
-            FOR i IN 0 .. p_months - 1
-            LOOP
-                v_month := (v_start + make_interval(months => i))::date;
-                v_name := t.table_name || '_p' || to_char(v_month, 'YYYYMM');
-                IF to_regclass(format('%I.%I', t.table_schema, v_name)) IS NULL THEN
-                    EXECUTE format(
-                        'CREATE TABLE %I.%I PARTITION OF %s FOR VALUES FROM (%L) TO (%L)',
-                        t.table_schema, v_name, v_parent, v_month, (v_month + interval '1 month')::date);
+                FOR i IN 0 .. p_months - 1
+                LOOP
+                    v_month := (v_start + make_interval(months => i))::date;
+                    v_next := (v_month + interval '1 month')::date;
+                    v_name := t.table_name || '_p' || to_char(v_month, 'YYYYMM');
+                    CONTINUE WHEN to_regclass(format('%I.%I', t.table_schema, v_name)) IS NOT NULL;
+
+                    BEGIN
+                        EXECUTE format(
+                            'CREATE TABLE %I.%I PARTITION OF %s FOR VALUES FROM (%L) TO (%L)',
+                            t.table_schema, v_name, v_parent, v_month, v_next);
+                    EXCEPTION WHEN check_violation THEN
+                        -- DEFAULT already holds rows of this month: move them into a standalone table,
+                        -- then attach it. The owner is subject to FORCE RLS, so the move runs with an
+                        -- all-entities scope, restored right after (and by the rollback on failure).
+                        v_scope := current_setting('app.legal_entity_ids', true);
+                        PERFORM set_config(
+                            'app.legal_entity_ids',
+                            coalesce((SELECT string_agg(id::text, ',') FROM ref.legal_entity), ''),
+                            true);
+                        EXECUTE format(
+                            'CREATE TABLE %I.%I (LIKE %s INCLUDING DEFAULTS INCLUDING CONSTRAINTS)',
+                            t.table_schema, v_name, v_parent);
+                        EXECUTE format(
+                            'WITH moved AS (DELETE FROM %I.%I WHERE as_of_date >= %L AND as_of_date < %L RETURNING *) '
+                            'INSERT INTO %I.%I SELECT * FROM moved',
+                            t.table_schema, v_default, v_month, v_next, t.table_schema, v_name);
+                        -- Still in the all-entities scope: validating the cloned foreign keys reads the
+                        -- referenced rows under row-level security.
+                        EXECUTE format(
+                            'ALTER TABLE %s ATTACH PARTITION %I.%I FOR VALUES FROM (%L) TO (%L)',
+                            v_parent, t.table_schema, v_name, v_month, v_next);
+                        PERFORM set_config('app.legal_entity_ids', coalesce(v_scope, ''), true);
+                    END;
+
                     -- Policies are not inherited by partitions: a direct read of a partition must
                     -- not bypass the isolation of its parent.
                     IF v_secure THEN
                         PERFORM meta.apply_le_isolation(format('%I.%I', t.table_schema, v_name)::regclass);
                     END IF;
-                    v_created := v_created + 1;
-                END IF;
-            END LOOP;
+                    v_table_created := v_table_created + 1;
+                END LOOP;
+
+                v_created := v_created + v_table_created;
+            EXCEPTION WHEN OTHERS THEN
+                -- No row content in the event: table, month and SQLSTATE only.
+                INSERT INTO meta.risk_event (id, event_type, as_of_date, details)
+                VALUES (gen_random_uuid(), 'PartitionMaintenanceFailed', v_month,
+                        jsonb_build_object('table', t.table_schema || '.' || t.table_name, 'sqlstate', SQLSTATE));
+                RAISE WARNING 'Partition maintenance failed for %.% (SQLSTATE %)', t.table_schema, t.table_name, SQLSTATE;
+            END;
         END LOOP;
 
         RETURN v_created;
     END
     $fn$;
-
     -- Detaches and drops the monthly partitions of one registered, purgeable table that end on or
     -- before p_before, never inside the minimum retention of the table and never in audit.
     -- Returns the number of partitions dropped.
@@ -275,6 +321,8 @@ BEGIN
         licence varchar(128) NOT NULL,
         url varchar(512) NOT NULL,
         attribution varchar(256) NOT NULL,
+        -- Exports exclude non-redistributable sources (external-sources.md X18).
+        redistributable boolean NOT NULL DEFAULT false,
         created_at timestamptz NOT NULL DEFAULT now(),
         CONSTRAINT pk_data_source PRIMARY KEY (id),
         CONSTRAINT ck_data_source_id CHECK (id ~ '^[a-z0-9][a-z0-9.-]{0,63}$'),
@@ -283,6 +331,21 @@ BEGIN
 
     COMMENT ON TABLE meta.data_source IS 'Open data sources, licence and mandatory attribution (rule R6).';
 
+    -- Governed reference rows, seeded here: no service identity writes them. Only the sources whose
+    -- licence is confirmed in data-classification.md; EBA, FR Y-9C and SDR are added after #41.
+    INSERT INTO meta.data_source (id, name, licence, url, attribution, redistributable)
+    VALUES
+        ('gleif-golden-copy', 'GLEIF Golden Copy (LEI level 1 and 2)', 'CC0-1.0',
+         'https://www.gleif.org/en/lei-data/gleif-golden-copy', 'Source: GLEIF Golden Copy.', true),
+        ('ecb-exr', 'ECB Data Portal - euro foreign exchange reference rates', 'ECB statistics reuse policy',
+         'https://data.ecb.europa.eu', 'Source: ECB statistics.', true),
+        ('ecb-yc', 'ECB Data Portal - euro area yield curves', 'ECB statistics reuse policy',
+         'https://data.ecb.europa.eu', 'Source: ECB statistics.', true),
+        ('bis-otc', 'BIS OTC derivatives statistics', 'BIS terms of use',
+         'https://data.bis.org', 'Source: BIS statistics.', true),
+        ('synthetic-portfolio', 'Synthetic portfolio generated by the project', 'Project (synthetic data)',
+         'https://github.com/Yvahajatiana/counterparty-risk', 'Synthetic data, not real positions.', true)
+    ON CONFLICT (id) DO NOTHING;
     CREATE TABLE meta.ingestion_run (
         id uuid NOT NULL,
         source_id varchar(64) NOT NULL,
@@ -440,10 +503,12 @@ BEGIN
         country_code char(2),
         sector_code varchar(16),
         exposure_class varchar(32) NOT NULL,
+        -- FINREP counterparty sector (Expert CCR), distinct from the CRR exposure class above.
         counterparty_type varchar(32),
+        is_qccp boolean NOT NULL DEFAULT false,
         rating_internal varchar(8),
         rating_external varchar(8),
-        watch_status varchar(16),
+        watch_status varchar(16) NOT NULL DEFAULT 'Performing',
         lineage varchar(16) NOT NULL,
         source_id varchar(64),
         ingestion_run_id uuid,
@@ -459,6 +524,10 @@ BEGIN
         CONSTRAINT ck_counterparty_exposure_class CHECK (exposure_class IN (
             'CentralGovernment', 'RegionalGovernment', 'PublicSectorEntity', 'MultilateralDevelopmentBank',
             'InternationalOrganisation', 'Institution', 'Corporate', 'InDefault')),
+        CONSTRAINT ck_counterparty_type CHECK (counterparty_type IN (
+            'CentralBank', 'GeneralGovernment', 'CreditInstitution', 'OtherFinancialCorporation',
+            'NonFinancialCorporation', 'Household')),
+        CONSTRAINT ck_counterparty_watch_status CHECK (watch_status IN ('Performing', 'Watchlist', 'Defaulted')),
         CONSTRAINT ck_counterparty_lineage CHECK (lineage IN ('Real', 'Transformed', 'Synthetic'))
     );
 
@@ -503,6 +572,8 @@ BEGIN
     -- Dated facts are partitioned by month on as_of_date: the primary key always includes it.
 
     -- ---------------------------------------------------------------- portfolio
+    -- Collateral: market value >= 0, the sign is carried by direction (received / posted), haircut in
+    -- [0, 1) (Expert CCR).
 
     CREATE TABLE portfolio.csa (
         id uuid NOT NULL,
@@ -536,7 +607,10 @@ BEGIN
         id uuid NOT NULL,
         legal_entity_id uuid NOT NULL,
         counterparty_id uuid NOT NULL,
+        -- Netting agreement (CRR art. 274(1), 296); None: an uncovered trade is its own netting set.
         agreement_type varchar(16) NOT NULL,
+        -- Margin agreement, distinct from netting: a CSA margins, it does not net.
+        margin_agreement varchar(8) NOT NULL,
         clearing_mode varchar(16) NOT NULL,
         csa_id uuid,
         lineage varchar(16) NOT NULL,
@@ -551,7 +625,9 @@ BEGIN
         CONSTRAINT fk_netting_set_csa FOREIGN KEY (csa_id, legal_entity_id) REFERENCES portfolio.csa (id, legal_entity_id),
         CONSTRAINT fk_netting_set_source FOREIGN KEY (source_id) REFERENCES meta.data_source (id),
         CONSTRAINT fk_netting_set_run FOREIGN KEY (ingestion_run_id) REFERENCES meta.ingestion_run (id),
-        CONSTRAINT ck_netting_set_agreement_type CHECK (agreement_type IN ('Isda', 'Gmra')),
+        CONSTRAINT ck_netting_set_agreement_type
+            CHECK (agreement_type IN ('Isda', 'Gmra', 'Gmsla', 'Mra', 'Msla', 'CcpRulebook', 'None')),
+        CONSTRAINT ck_netting_set_margin_agreement CHECK (margin_agreement IN ('Csa', 'None')),
         CONSTRAINT ck_netting_set_clearing_mode CHECK (clearing_mode IN ('Bilateral', 'Qccp', 'NonQccp')),
         CONSTRAINT ck_netting_set_lineage CHECK (lineage IN ('Real', 'Transformed', 'Synthetic'))
     );
@@ -616,6 +692,11 @@ BEGIN
         market_value numeric(28, 8) NOT NULL,
         currency char(3) NOT NULL,
         haircut numeric(9, 8) NOT NULL,
+        is_segregated boolean NOT NULL DEFAULT false,
+        -- Asset type of the collateral (cash, bonds...): code list to be fixed with #18.
+        collateral_asset_type varchar(32) NOT NULL,
+        -- Initial margin computed with ISDA SIMM.
+        is_simm boolean NOT NULL DEFAULT false,
         lineage varchar(16) NOT NULL,
         source_id varchar(64),
         ingestion_run_id uuid,
@@ -766,10 +847,16 @@ BEGIN
         counterparty_id uuid NOT NULL,
         netting_set_id uuid NOT NULL,
         regulatory_approach varchar(16) NOT NULL,
+        is_margined boolean NOT NULL,
+        -- V - C and NICA inputs of the replacement cost (CRR art. 275).
+        v_minus_c numeric(28, 8) NOT NULL,
+        nica numeric(28, 8) NOT NULL,
         replacement_cost numeric(28, 8) NOT NULL,
         aggregate_add_on numeric(28, 8) NOT NULL,
         pfe_multiplier numeric(18, 10) NOT NULL,
         potential_future_exposure numeric(28, 8) NOT NULL,
+        -- Alpha is stored, not assumed: 1.4 by default, 1 for some non-financial counterparties.
+        alpha numeric(6, 4) NOT NULL,
         exposure_at_default numeric(28, 8) NOT NULL,
         currency char(3) NOT NULL,
         method_version_id varchar(32) NOT NULL,
@@ -789,8 +876,41 @@ BEGIN
         CONSTRAINT ck_saccr_result_amounts CHECK (replacement_cost >= 0 AND aggregate_add_on >= 0
             AND potential_future_exposure >= 0 AND exposure_at_default >= 0),
         CONSTRAINT ck_saccr_result_multiplier CHECK (pfe_multiplier > 0 AND pfe_multiplier <= 1),
+        CONSTRAINT ck_saccr_result_alpha CHECK (alpha > 0 AND alpha <= 1.4),
         CONSTRAINT ck_saccr_result_currency CHECK (currency ~ '^[A-Z]{3}$'),
         CONSTRAINT ck_saccr_result_lineage CHECK (lineage IN ('Real', 'Transformed', 'Synthetic'))
+    ) PARTITION BY RANGE (as_of_date);
+
+    -- SA-CCR add-on per asset class of a netting set (child of saccr_result, same keys and partitions).
+    -- No foreign key to the partitioned parent: both are purged partition by partition.
+    CREATE TABLE calc.saccr_addon (
+        id uuid NOT NULL,
+        as_of_date date NOT NULL,
+        saccr_result_id uuid NOT NULL,
+        legal_entity_id uuid NOT NULL,
+        counterparty_id uuid NOT NULL,
+        netting_set_id uuid NOT NULL,
+        asset_class varchar(16) NOT NULL,
+        addon numeric(28, 8) NOT NULL,
+        currency char(3) NOT NULL,
+        method_version_id varchar(32) NOT NULL,
+        lineage varchar(16) NOT NULL,
+        source_id varchar(64),
+        ingestion_run_id uuid,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT pk_saccr_addon PRIMARY KEY (as_of_date, id),
+        CONSTRAINT uq_saccr_addon UNIQUE (as_of_date, saccr_result_id, asset_class),
+        CONSTRAINT fk_saccr_addon_netting_set FOREIGN KEY (netting_set_id, legal_entity_id, counterparty_id)
+            REFERENCES portfolio.netting_set (id, legal_entity_id, counterparty_id),
+        CONSTRAINT fk_saccr_addon_method FOREIGN KEY (method_version_id) REFERENCES meta.method_version (id),
+        CONSTRAINT fk_saccr_addon_source FOREIGN KEY (source_id) REFERENCES meta.data_source (id),
+        CONSTRAINT fk_saccr_addon_run FOREIGN KEY (ingestion_run_id) REFERENCES meta.ingestion_run (id),
+        -- Codes of the Expert CCR (Fx, not the ForeignExchange name of SaCcrAssetClass).
+        CONSTRAINT ck_saccr_addon_asset_class
+            CHECK (asset_class IN ('InterestRate', 'Fx', 'Credit', 'Equity', 'Commodity')),
+        CONSTRAINT ck_saccr_addon_amount CHECK (addon >= 0),
+        CONSTRAINT ck_saccr_addon_currency CHECK (currency ~ '^[A-Z]{3}$'),
+        CONSTRAINT ck_saccr_addon_lineage CHECK (lineage IN ('Real', 'Transformed', 'Synthetic'))
     ) PARTITION BY RANGE (as_of_date);
 
     -- Exposure profile (EE, PFE, ENE...) per horizon in calendar days (ExposureHorizonGrid, 30 years cap).
@@ -858,16 +978,21 @@ BEGIN
         CONSTRAINT ck_rwa_result_lineage CHECK (lineage IN ('Real', 'Transformed', 'Synthetic'))
     ) PARTITION BY RANGE (as_of_date);
 
-    -- CVA is computed per counterparty (all its netting sets): netting_set_id is optional here.
+    -- CVA capital, reduced BA-CVA (MAR50). ASSUMPTION: BA-CVA versus SA-CVA is still open in the EDB;
+    -- these tables follow the reduced BA-CVA and will be revisited with that decision. CS01 (economic
+    -- CVA sensitivities) is out of scope here (#24). Three levels, because K_reduced is not additive:
+    -- counterparty (SCVA), netting set (M, EAD, DF) and portfolio of the legal entity (K_reduced).
     CREATE TABLE calc.cva_result (
         id uuid NOT NULL,
         as_of_date date NOT NULL,
         legal_entity_id uuid NOT NULL,
         counterparty_id uuid NOT NULL,
-        netting_set_id uuid,
         cva_approach varchar(16) NOT NULL,
-        measure_code varchar(40) NOT NULL,
-        amount numeric(28, 8) NOT NULL,
+        -- MAR50 sector bucket, distinct from ref.counterparty.counterparty_type.
+        cva_sector_bucket varchar(24) NOT NULL,
+        credit_quality varchar(8) NOT NULL,
+        risk_weight numeric(18, 10) NOT NULL,
+        scva numeric(28, 8) NOT NULL,
         currency char(3) NOT NULL,
         method_version_id varchar(32) NOT NULL,
         lineage varchar(16) NOT NULL,
@@ -875,20 +1000,79 @@ BEGIN
         ingestion_run_id uuid,
         created_at timestamptz NOT NULL DEFAULT now(),
         CONSTRAINT pk_cva_result PRIMARY KEY (as_of_date, id),
+        CONSTRAINT uq_cva_result_counterparty UNIQUE (as_of_date, legal_entity_id, counterparty_id, method_version_id),
         CONSTRAINT fk_cva_result_legal_entity FOREIGN KEY (legal_entity_id) REFERENCES ref.legal_entity (id),
         CONSTRAINT fk_cva_result_counterparty FOREIGN KEY (counterparty_id) REFERENCES ref.counterparty (id),
-        CONSTRAINT fk_cva_result_netting_set FOREIGN KEY (netting_set_id, legal_entity_id, counterparty_id)
-            REFERENCES portfolio.netting_set (id, legal_entity_id, counterparty_id),
         CONSTRAINT fk_cva_result_method FOREIGN KEY (method_version_id) REFERENCES meta.method_version (id),
         CONSTRAINT fk_cva_result_source FOREIGN KEY (source_id) REFERENCES meta.data_source (id),
         CONSTRAINT fk_cva_result_run FOREIGN KEY (ingestion_run_id) REFERENCES meta.ingestion_run (id),
         CONSTRAINT ck_cva_result_approach CHECK (cva_approach IN ('ReducedBaCva', 'FullBaCva')),
-        CONSTRAINT ck_cva_result_measure
-            CHECK (measure_code IN ('CreditValuationAdjustment', 'DebitValuationAdjustment')),
+        CONSTRAINT ck_cva_result_sector_bucket CHECK (cva_sector_bucket IN (
+            'Sovereign', 'LocalGovernment', 'Financial', 'BasicMaterials', 'ConsumerGoods', 'Technology',
+            'HealthCare', 'Other')),
+        CONSTRAINT ck_cva_result_credit_quality CHECK (credit_quality IN ('IG', 'HYNR')),
+        CONSTRAINT ck_cva_result_risk_weight CHECK (risk_weight >= 0 AND risk_weight <= 1),
+        CONSTRAINT ck_cva_result_scva CHECK (scva >= 0),
         CONSTRAINT ck_cva_result_currency CHECK (currency ~ '^[A-Z]{3}$'),
         CONSTRAINT ck_cva_result_lineage CHECK (lineage IN ('Real', 'Transformed', 'Synthetic'))
     ) PARTITION BY RANGE (as_of_date);
 
+    -- Netting set inputs of SCVA: effective maturity M, EAD and supervisory discount factor DF.
+    CREATE TABLE calc.cva_netting_set (
+        id uuid NOT NULL,
+        as_of_date date NOT NULL,
+        cva_result_id uuid NOT NULL,
+        legal_entity_id uuid NOT NULL,
+        counterparty_id uuid NOT NULL,
+        netting_set_id uuid NOT NULL,
+        m_ns numeric(18, 10) NOT NULL,
+        ead_ns numeric(28, 8) NOT NULL,
+        df_ns numeric(18, 10) NOT NULL,
+        currency char(3) NOT NULL,
+        method_version_id varchar(32) NOT NULL,
+        lineage varchar(16) NOT NULL,
+        source_id varchar(64),
+        ingestion_run_id uuid,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT pk_cva_netting_set PRIMARY KEY (as_of_date, id),
+        CONSTRAINT uq_cva_netting_set UNIQUE (as_of_date, cva_result_id, netting_set_id),
+        CONSTRAINT fk_cva_netting_set_netting_set FOREIGN KEY (netting_set_id, legal_entity_id, counterparty_id)
+            REFERENCES portfolio.netting_set (id, legal_entity_id, counterparty_id),
+        CONSTRAINT fk_cva_netting_set_method FOREIGN KEY (method_version_id) REFERENCES meta.method_version (id),
+        CONSTRAINT fk_cva_netting_set_source FOREIGN KEY (source_id) REFERENCES meta.data_source (id),
+        CONSTRAINT fk_cva_netting_set_run FOREIGN KEY (ingestion_run_id) REFERENCES meta.ingestion_run (id),
+        CONSTRAINT ck_cva_netting_set_values CHECK (m_ns >= 0 AND ead_ns >= 0 AND df_ns > 0 AND df_ns <= 1),
+        CONSTRAINT ck_cva_netting_set_currency CHECK (currency ~ '^[A-Z]{3}$'),
+        CONSTRAINT ck_cva_netting_set_lineage CHECK (lineage IN ('Real', 'Transformed', 'Synthetic'))
+    ) PARTITION BY RANGE (as_of_date);
+
+    -- Portfolio level of a legal entity: K_reduced with its correlation rho and discount scalar DS.
+    CREATE TABLE calc.cva_portfolio (
+        id uuid NOT NULL,
+        as_of_date date NOT NULL,
+        legal_entity_id uuid NOT NULL,
+        cva_approach varchar(16) NOT NULL,
+        k_reduced numeric(28, 8) NOT NULL,
+        rho numeric(6, 5) NOT NULL,
+        ds numeric(6, 5) NOT NULL,
+        own_funds numeric(28, 8) NOT NULL,
+        currency char(3) NOT NULL,
+        method_version_id varchar(32) NOT NULL,
+        lineage varchar(16) NOT NULL,
+        source_id varchar(64),
+        ingestion_run_id uuid,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT pk_cva_portfolio PRIMARY KEY (as_of_date, id),
+        CONSTRAINT uq_cva_portfolio UNIQUE (as_of_date, legal_entity_id, method_version_id),
+        CONSTRAINT fk_cva_portfolio_legal_entity FOREIGN KEY (legal_entity_id) REFERENCES ref.legal_entity (id),
+        CONSTRAINT fk_cva_portfolio_method FOREIGN KEY (method_version_id) REFERENCES meta.method_version (id),
+        CONSTRAINT fk_cva_portfolio_source FOREIGN KEY (source_id) REFERENCES meta.data_source (id),
+        CONSTRAINT fk_cva_portfolio_run FOREIGN KEY (ingestion_run_id) REFERENCES meta.ingestion_run (id),
+        CONSTRAINT ck_cva_portfolio_approach CHECK (cva_approach IN ('ReducedBaCva', 'FullBaCva')),
+        CONSTRAINT ck_cva_portfolio_values CHECK (k_reduced >= 0 AND own_funds >= 0 AND rho BETWEEN 0 AND 1 AND ds > 0 AND ds <= 1),
+        CONSTRAINT ck_cva_portfolio_currency CHECK (currency ~ '^[A-Z]{3}$'),
+        CONSTRAINT ck_cva_portfolio_lineage CHECK (lineage IN ('Real', 'Transformed', 'Synthetic'))
+    ) PARTITION BY RANGE (as_of_date);
     -- Allocation of a netting set figure to its trades with the documented rule (ADR-002 §5).
     -- No foreign key to the partitioned trade table: both are purged partition by partition.
     CREATE TABLE calc.allocation_result (
@@ -926,22 +1110,28 @@ BEGIN
         CONSTRAINT ck_allocation_result_lineage CHECK (lineage IN ('Real', 'Transformed', 'Synthetic'))
     ) PARTITION BY RANGE (as_of_date);
 
-    -- Access paths shared by every calc table: (as_of_date, netting set / counterparty / legal entity)
-    -- B-tree, plus BRIN on as_of_date for range scans of large partitions.
+    -- Access paths shared by the calc tables: (as_of_date, netting set / counterparty / legal entity)
+    -- B-tree where the column exists, plus BRIN on as_of_date for range scans of large partitions.
     DO $idx$
     DECLARE
         v_table text;
+        v_column text;
     BEGIN
-        FOREACH v_table IN ARRAY ARRAY['exposure_result', 'saccr_result', 'profile_point', 'rwa_result', 'cva_result', 'allocation_result']
+        FOREACH v_table IN ARRAY ARRAY['exposure_result', 'saccr_result', 'saccr_addon', 'profile_point', 'rwa_result',
+                                       'cva_result', 'cva_netting_set', 'cva_portfolio', 'allocation_result']
         LOOP
-            EXECUTE format('CREATE INDEX %I ON calc.%I (as_of_date, netting_set_id)', 'ix_' || v_table || '_as_of_netting_set', v_table);
-            EXECUTE format('CREATE INDEX %I ON calc.%I (as_of_date, counterparty_id)', 'ix_' || v_table || '_as_of_counterparty', v_table);
-            EXECUTE format('CREATE INDEX %I ON calc.%I (as_of_date, legal_entity_id)', 'ix_' || v_table || '_as_of_legal_entity', v_table);
+            FOREACH v_column IN ARRAY ARRAY['netting_set_id', 'counterparty_id', 'legal_entity_id']
+            LOOP
+                IF EXISTS (SELECT 1 FROM pg_catalog.pg_attribute
+                           WHERE attrelid = format('calc.%I', v_table)::regclass AND attname = v_column AND NOT attisdropped) THEN
+                    EXECUTE format('CREATE INDEX %I ON calc.%I (as_of_date, %I)',
+                        'ix_' || v_table || '_as_of_' || replace(v_column, '_id', ''), v_table, v_column);
+                END IF;
+            END LOOP;
             EXECUTE format('CREATE INDEX %I ON calc.%I USING brin (as_of_date)', 'brin_' || v_table || '_as_of_date', v_table);
         END LOOP;
     END
     $idx$;
-
     END IF;
 END $EF$;
 
@@ -982,6 +1172,12 @@ BEGIN
     CREATE TRIGGER trg_audit_event_append_only
         BEFORE UPDATE OR DELETE ON audit.audit_event
         FOR EACH ROW EXECUTE FUNCTION audit.reject_change();
+
+    -- Statement level as well: a row trigger does not fire when no row matches, so an UPDATE or
+    -- DELETE would otherwise be accepted on an empty table or with a selective WHERE.
+    CREATE TRIGGER trg_audit_event_append_only_statement
+        BEFORE UPDATE OR DELETE ON audit.audit_event
+        FOR EACH STATEMENT EXECUTE FUNCTION audit.reject_change();
 
     CREATE TRIGGER trg_audit_event_no_truncate
         BEFORE TRUNCATE ON audit.audit_event
@@ -1034,9 +1230,12 @@ BEGIN
         ('market', 'yield_curve_param'),
         ('calc', 'exposure_result'),
         ('calc', 'saccr_result'),
+        ('calc', 'saccr_addon'),
         ('calc', 'profile_point'),
         ('calc', 'rwa_result'),
         ('calc', 'cva_result'),
+        ('calc', 'cva_netting_set'),
+        ('calc', 'cva_portfolio'),
         ('calc', 'allocation_result')
     ON CONFLICT (table_schema, table_name) DO NOTHING;
 
@@ -1062,13 +1261,6 @@ BEGIN
     END
     $rls$;
 
-    -- Partitions M-1 .. M+3 and the DEFAULT partitions (partitions inherit the isolation policy).
-    DO $partitions$
-    BEGIN
-        PERFORM meta.ensure_partitions((current_date - interval '1 month')::date, 5);
-    END
-    $partitions$;
-
     -- Business events: read by the reader roles, inserted by cr_governance_writer with the
     -- HistoryCorrection type only (data-flow.md).
     ALTER TABLE meta.risk_event ENABLE ROW LEVEL SECURITY;
@@ -1076,6 +1268,17 @@ BEGIN
     CREATE POLICY risk_event_read ON meta.risk_event FOR SELECT TO cr_reader, cr_writer USING (true);
     CREATE POLICY risk_event_history_correction ON meta.risk_event FOR INSERT TO cr_governance_writer
         WITH CHECK (event_type = 'HistoryCorrection');
+    -- meta.ensure_partitions (SECURITY DEFINER, cr_owner) records the tables it had to skip.
+    CREATE POLICY risk_event_partition_maintenance ON meta.risk_event FOR INSERT TO cr_owner
+        WITH CHECK (event_type = 'PartitionMaintenanceFailed');
+
+    -- Partitions M-1 .. M+3 and the DEFAULT partitions. Policies are NOT inherited by partitions:
+    -- meta.ensure_partitions applies the isolation policy to each partition it creates.
+    DO $partitions$
+    BEGIN
+        PERFORM meta.ensure_partitions((current_date - interval '1 month')::date, 5);
+    END
+    $partitions$;
 
     -- ---------------------------------------------------------------- schema usage
 
@@ -1102,19 +1305,25 @@ BEGIN
 
     -- ---------------------------------------------------------------- cr_writer (workers, all-entities scope)
 
-    GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA ref, portfolio, market, bench, calc, reporting TO cr_writer;
+    GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA ref, portfolio, market, bench, reporting TO cr_writer;
+    -- Calculation results are snapshots: INSERT only, a recalculation writes new rows (TM-TB4-07).
+    GRANT SELECT, INSERT ON ALL TABLES IN SCHEMA calc TO cr_writer;
     GRANT INSERT ON ALL TABLES IN SCHEMA financing TO cr_writer;
     GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA staging TO cr_writer;
     GRANT SELECT, INSERT, UPDATE ON meta.ingestion_run, meta.dq_result TO cr_writer;
     GRANT SELECT ON meta.data_source, meta.method_version, meta.active_method_version, meta.risk_event TO cr_writer;
 
-    ALTER DEFAULT PRIVILEGES FOR ROLE cr_owner IN SCHEMA ref, portfolio, market, bench, calc, reporting
+    -- No default write grant in portfolio: limit tables belong to cr_limit_writer (#27), so every new
+    -- portfolio table is granted explicitly by its migration (deny by default).
+    ALTER DEFAULT PRIVILEGES FOR ROLE cr_owner IN SCHEMA ref, market, bench, reporting
         GRANT SELECT, INSERT, UPDATE ON TABLES TO cr_writer;
+    ALTER DEFAULT PRIVILEGES FOR ROLE cr_owner IN SCHEMA calc
+        GRANT SELECT, INSERT ON TABLES TO cr_writer;
     ALTER DEFAULT PRIVILEGES FOR ROLE cr_owner IN SCHEMA financing
         GRANT INSERT ON TABLES TO cr_writer;
     ALTER DEFAULT PRIVILEGES FOR ROLE cr_owner IN SCHEMA staging
         GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON TABLES TO cr_writer;
-    ALTER DEFAULT PRIVILEGES FOR ROLE cr_owner IN SCHEMA ref, portfolio, financing, market, bench, calc, reporting, staging
+    ALTER DEFAULT PRIVILEGES FOR ROLE cr_owner IN SCHEMA ref, financing, market, bench, calc, reporting, staging
         GRANT USAGE ON SEQUENCES TO cr_writer;
 
     -- ---------------------------------------------------------------- cr_limit_writer (API, limit tables)
@@ -1144,8 +1353,9 @@ BEGIN
     -- ---------------------------------------------------------------- audit, key rings, sessions
 
     GRANT INSERT ON audit.audit_event TO cr_audit_writer;
-    -- Only what the writer needs to chain the previous hash (TM-TB4-03).
-    GRANT SELECT (seq, hash) ON audit.audit_event TO cr_audit_writer;
+    -- Only what the writer needs to chain the previous hash (TM-TB4-03) and the generated values an
+    -- INSERT ... RETURNING reads back (EF Core, #10): never the payload nor the actor.
+    GRANT SELECT (seq, occurred_at, hash) ON audit.audit_event TO cr_audit_writer;
     GRANT SELECT ON audit.audit_event TO cr_audit_reader, cr_audit_verifier;
 
     GRANT SELECT, INSERT ON dpkeys.api_key TO cr_api_keys;

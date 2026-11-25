@@ -102,10 +102,54 @@ public class LegalEntityScopeInterceptorTests
 
         interceptor.SavingChanges(new DbContextEventData(null!, null!, context), default);
         context.Database.AutoTransactionBehavior.ShouldBe(AutoTransactionBehavior.Always);
+        interceptor.SavedChanges(new SaveChangesCompletedEventData(null!, null!, context, 1), 1);
+        context.Database.AutoTransactionBehavior.ShouldBe(AutoTransactionBehavior.WhenNeeded);
 
-        context.Database.AutoTransactionBehavior = AutoTransactionBehavior.WhenNeeded;
+        context.Database.AutoTransactionBehavior = AutoTransactionBehavior.Never;
         await interceptor.SavingChangesAsync(new DbContextEventData(null!, null!, context), default, TestContext.Current.CancellationToken);
         context.Database.AutoTransactionBehavior.ShouldBe(AutoTransactionBehavior.Always);
+        await interceptor.SaveChangesFailedAsync(new DbContextErrorEventData(null!, null!, context, new InvalidOperationException()), TestContext.Current.CancellationToken);
+        context.Database.AutoTransactionBehavior.ShouldBe(AutoTransactionBehavior.Never);
+
+        interceptor.SavingChanges(new DbContextEventData(null!, null!, context), default);
+        interceptor.SaveChangesCanceled(new DbContextEventData(null!, null!, context));
+        context.Database.AutoTransactionBehavior.ShouldBe(AutoTransactionBehavior.Never);
+    }
+
+    [Fact]
+    public void Commands_without_a_transaction_are_refused()
+    {
+        using var connection = new RecordingConnection();
+        using var command = connection.CreateCommand();
+        var interceptor = new LegalEntityScopeInterceptor(new EmptyLegalEntityScope());
+
+        Should.Throw<InvalidOperationException>(() => interceptor.ReaderExecuting(command, null!, default));
+        Should.Throw<InvalidOperationException>(() => interceptor.NonQueryExecuting(command, null!, default));
+        Should.Throw<InvalidOperationException>(() => interceptor.ScalarExecuting(command, null!, default));
+        Should.Throw<InvalidOperationException>(async () => await interceptor.ReaderExecutingAsync(command, null!, default));
+        Should.Throw<InvalidOperationException>(async () => await interceptor.NonQueryExecutingAsync(command, null!, default));
+        Should.Throw<InvalidOperationException>(async () => await interceptor.ScalarExecutingAsync(command, null!, default));
+    }
+
+    [Fact]
+    public async Task Commands_inside_a_transaction_are_allowed()
+    {
+        await using var connection = new RecordingConnection();
+        await using var transaction = await connection.BeginTransactionAsync(TestContext.Current.CancellationToken);
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        var interceptor = new LegalEntityScopeInterceptor(new EmptyLegalEntityScope());
+
+        interceptor.ReaderExecuting(command, null!, default).HasResult.ShouldBeFalse();
+        interceptor.NonQueryExecuting(command, null!, default).HasResult.ShouldBeFalse();
+        interceptor.ScalarExecuting(command, null!, default).HasResult.ShouldBeFalse();
+        (await interceptor.ReaderExecutingAsync(command, null!, default, TestContext.Current.CancellationToken)).HasResult.ShouldBeFalse();
+        (await interceptor.NonQueryExecutingAsync(command, null!, default, TestContext.Current.CancellationToken)).HasResult.ShouldBeFalse();
+        (await interceptor.ScalarExecutingAsync(command, null!, default, TestContext.Current.CancellationToken)).HasResult.ShouldBeFalse();
+        interceptor.SavedChanges(null!, 0).ShouldBe(0);
+        (await interceptor.SavedChangesAsync(null!, 2, TestContext.Current.CancellationToken)).ShouldBe(2);
+        interceptor.SaveChangesFailed(null!);
+        await interceptor.SaveChangesCanceledAsync(null!, TestContext.Current.CancellationToken);
     }
 
     private sealed class SampleContext(DbContextOptions<SampleContext> options) : DbContext(options);

@@ -2,6 +2,8 @@
 -- Dated facts are partitioned by month on as_of_date: the primary key always includes it.
 
 -- ---------------------------------------------------------------- portfolio
+-- Collateral: market value >= 0, the sign is carried by direction (received / posted), haircut in
+-- [0, 1) (Expert CCR).
 
 CREATE TABLE portfolio.csa (
     id uuid NOT NULL,
@@ -35,7 +37,10 @@ CREATE TABLE portfolio.netting_set (
     id uuid NOT NULL,
     legal_entity_id uuid NOT NULL,
     counterparty_id uuid NOT NULL,
+    -- Netting agreement (CRR art. 274(1), 296); None: an uncovered trade is its own netting set.
     agreement_type varchar(16) NOT NULL,
+    -- Margin agreement, distinct from netting: a CSA margins, it does not net.
+    margin_agreement varchar(8) NOT NULL,
     clearing_mode varchar(16) NOT NULL,
     csa_id uuid,
     lineage varchar(16) NOT NULL,
@@ -50,7 +55,9 @@ CREATE TABLE portfolio.netting_set (
     CONSTRAINT fk_netting_set_csa FOREIGN KEY (csa_id, legal_entity_id) REFERENCES portfolio.csa (id, legal_entity_id),
     CONSTRAINT fk_netting_set_source FOREIGN KEY (source_id) REFERENCES meta.data_source (id),
     CONSTRAINT fk_netting_set_run FOREIGN KEY (ingestion_run_id) REFERENCES meta.ingestion_run (id),
-    CONSTRAINT ck_netting_set_agreement_type CHECK (agreement_type IN ('Isda', 'Gmra')),
+    CONSTRAINT ck_netting_set_agreement_type
+        CHECK (agreement_type IN ('Isda', 'Gmra', 'Gmsla', 'Mra', 'Msla', 'CcpRulebook', 'None')),
+    CONSTRAINT ck_netting_set_margin_agreement CHECK (margin_agreement IN ('Csa', 'None')),
     CONSTRAINT ck_netting_set_clearing_mode CHECK (clearing_mode IN ('Bilateral', 'Qccp', 'NonQccp')),
     CONSTRAINT ck_netting_set_lineage CHECK (lineage IN ('Real', 'Transformed', 'Synthetic'))
 );
@@ -115,6 +122,11 @@ CREATE TABLE portfolio.collateral_position (
     market_value numeric(28, 8) NOT NULL,
     currency char(3) NOT NULL,
     haircut numeric(9, 8) NOT NULL,
+    is_segregated boolean NOT NULL DEFAULT false,
+    -- Asset type of the collateral (cash, bonds...): code list to be fixed with #18.
+    collateral_asset_type varchar(32) NOT NULL,
+    -- Initial margin computed with ISDA SIMM.
+    is_simm boolean NOT NULL DEFAULT false,
     lineage varchar(16) NOT NULL,
     source_id varchar(64),
     ingestion_run_id uuid,

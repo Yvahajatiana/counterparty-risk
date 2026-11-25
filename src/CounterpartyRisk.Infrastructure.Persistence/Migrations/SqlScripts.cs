@@ -17,6 +17,18 @@ internal static class SqlScripts
             .Select(name => name[($"{Prefix}{migrationId}/".Length)..])
             .Order(StringComparer.Ordinal)];
 
+    /// <summary>
+    /// Files of a migration, failing when there is none: a packaging mistake must never record a
+    /// migration as applied without running any DDL.
+    /// </summary>
+    public static IReadOnlyList<string> RequireFilesOf(string migrationId)
+    {
+        var files = FilesOf(migrationId);
+        return files.Count > 0
+            ? files
+            : throw new InvalidOperationException($"No embedded SQL script found for migration {migrationId}.");
+    }
+
     public static string Load(string migrationId, string fileName)
     {
         var expected = $"{Prefix}{migrationId}/{fileName}";

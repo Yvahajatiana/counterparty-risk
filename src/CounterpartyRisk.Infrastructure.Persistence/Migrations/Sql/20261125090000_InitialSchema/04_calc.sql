@@ -43,10 +43,16 @@ CREATE TABLE calc.saccr_result (
     counterparty_id uuid NOT NULL,
     netting_set_id uuid NOT NULL,
     regulatory_approach varchar(16) NOT NULL,
+    is_margined boolean NOT NULL,
+    -- V - C and NICA inputs of the replacement cost (CRR art. 275).
+    v_minus_c numeric(28, 8) NOT NULL,
+    nica numeric(28, 8) NOT NULL,
     replacement_cost numeric(28, 8) NOT NULL,
     aggregate_add_on numeric(28, 8) NOT NULL,
     pfe_multiplier numeric(18, 10) NOT NULL,
     potential_future_exposure numeric(28, 8) NOT NULL,
+    -- Alpha is stored, not assumed: 1.4 by default, 1 for some non-financial counterparties.
+    alpha numeric(6, 4) NOT NULL,
     exposure_at_default numeric(28, 8) NOT NULL,
     currency char(3) NOT NULL,
     method_version_id varchar(32) NOT NULL,
@@ -66,8 +72,41 @@ CREATE TABLE calc.saccr_result (
     CONSTRAINT ck_saccr_result_amounts CHECK (replacement_cost >= 0 AND aggregate_add_on >= 0
         AND potential_future_exposure >= 0 AND exposure_at_default >= 0),
     CONSTRAINT ck_saccr_result_multiplier CHECK (pfe_multiplier > 0 AND pfe_multiplier <= 1),
+    CONSTRAINT ck_saccr_result_alpha CHECK (alpha > 0 AND alpha <= 1.4),
     CONSTRAINT ck_saccr_result_currency CHECK (currency ~ '^[A-Z]{3}$'),
     CONSTRAINT ck_saccr_result_lineage CHECK (lineage IN ('Real', 'Transformed', 'Synthetic'))
+) PARTITION BY RANGE (as_of_date);
+
+-- SA-CCR add-on per asset class of a netting set (child of saccr_result, same keys and partitions).
+-- No foreign key to the partitioned parent: both are purged partition by partition.
+CREATE TABLE calc.saccr_addon (
+    id uuid NOT NULL,
+    as_of_date date NOT NULL,
+    saccr_result_id uuid NOT NULL,
+    legal_entity_id uuid NOT NULL,
+    counterparty_id uuid NOT NULL,
+    netting_set_id uuid NOT NULL,
+    asset_class varchar(16) NOT NULL,
+    addon numeric(28, 8) NOT NULL,
+    currency char(3) NOT NULL,
+    method_version_id varchar(32) NOT NULL,
+    lineage varchar(16) NOT NULL,
+    source_id varchar(64),
+    ingestion_run_id uuid,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT pk_saccr_addon PRIMARY KEY (as_of_date, id),
+    CONSTRAINT uq_saccr_addon UNIQUE (as_of_date, saccr_result_id, asset_class),
+    CONSTRAINT fk_saccr_addon_netting_set FOREIGN KEY (netting_set_id, legal_entity_id, counterparty_id)
+        REFERENCES portfolio.netting_set (id, legal_entity_id, counterparty_id),
+    CONSTRAINT fk_saccr_addon_method FOREIGN KEY (method_version_id) REFERENCES meta.method_version (id),
+    CONSTRAINT fk_saccr_addon_source FOREIGN KEY (source_id) REFERENCES meta.data_source (id),
+    CONSTRAINT fk_saccr_addon_run FOREIGN KEY (ingestion_run_id) REFERENCES meta.ingestion_run (id),
+    -- Codes of the Expert CCR (Fx, not the ForeignExchange name of SaCcrAssetClass).
+    CONSTRAINT ck_saccr_addon_asset_class
+        CHECK (asset_class IN ('InterestRate', 'Fx', 'Credit', 'Equity', 'Commodity')),
+    CONSTRAINT ck_saccr_addon_amount CHECK (addon >= 0),
+    CONSTRAINT ck_saccr_addon_currency CHECK (currency ~ '^[A-Z]{3}$'),
+    CONSTRAINT ck_saccr_addon_lineage CHECK (lineage IN ('Real', 'Transformed', 'Synthetic'))
 ) PARTITION BY RANGE (as_of_date);
 
 -- Exposure profile (EE, PFE, ENE...) per horizon in calendar days (ExposureHorizonGrid, 30 years cap).
@@ -135,16 +174,21 @@ CREATE TABLE calc.rwa_result (
     CONSTRAINT ck_rwa_result_lineage CHECK (lineage IN ('Real', 'Transformed', 'Synthetic'))
 ) PARTITION BY RANGE (as_of_date);
 
--- CVA is computed per counterparty (all its netting sets): netting_set_id is optional here.
+-- CVA capital, reduced BA-CVA (MAR50). ASSUMPTION: BA-CVA versus SA-CVA is still open in the EDB;
+-- these tables follow the reduced BA-CVA and will be revisited with that decision. CS01 (economic
+-- CVA sensitivities) is out of scope here (#24). Three levels, because K_reduced is not additive:
+-- counterparty (SCVA), netting set (M, EAD, DF) and portfolio of the legal entity (K_reduced).
 CREATE TABLE calc.cva_result (
     id uuid NOT NULL,
     as_of_date date NOT NULL,
     legal_entity_id uuid NOT NULL,
     counterparty_id uuid NOT NULL,
-    netting_set_id uuid,
     cva_approach varchar(16) NOT NULL,
-    measure_code varchar(40) NOT NULL,
-    amount numeric(28, 8) NOT NULL,
+    -- MAR50 sector bucket, distinct from ref.counterparty.counterparty_type.
+    cva_sector_bucket varchar(24) NOT NULL,
+    credit_quality varchar(8) NOT NULL,
+    risk_weight numeric(18, 10) NOT NULL,
+    scva numeric(28, 8) NOT NULL,
     currency char(3) NOT NULL,
     method_version_id varchar(32) NOT NULL,
     lineage varchar(16) NOT NULL,
@@ -152,20 +196,79 @@ CREATE TABLE calc.cva_result (
     ingestion_run_id uuid,
     created_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT pk_cva_result PRIMARY KEY (as_of_date, id),
+    CONSTRAINT uq_cva_result_counterparty UNIQUE (as_of_date, legal_entity_id, counterparty_id, method_version_id),
     CONSTRAINT fk_cva_result_legal_entity FOREIGN KEY (legal_entity_id) REFERENCES ref.legal_entity (id),
     CONSTRAINT fk_cva_result_counterparty FOREIGN KEY (counterparty_id) REFERENCES ref.counterparty (id),
-    CONSTRAINT fk_cva_result_netting_set FOREIGN KEY (netting_set_id, legal_entity_id, counterparty_id)
-        REFERENCES portfolio.netting_set (id, legal_entity_id, counterparty_id),
     CONSTRAINT fk_cva_result_method FOREIGN KEY (method_version_id) REFERENCES meta.method_version (id),
     CONSTRAINT fk_cva_result_source FOREIGN KEY (source_id) REFERENCES meta.data_source (id),
     CONSTRAINT fk_cva_result_run FOREIGN KEY (ingestion_run_id) REFERENCES meta.ingestion_run (id),
     CONSTRAINT ck_cva_result_approach CHECK (cva_approach IN ('ReducedBaCva', 'FullBaCva')),
-    CONSTRAINT ck_cva_result_measure
-        CHECK (measure_code IN ('CreditValuationAdjustment', 'DebitValuationAdjustment')),
+    CONSTRAINT ck_cva_result_sector_bucket CHECK (cva_sector_bucket IN (
+        'Sovereign', 'LocalGovernment', 'Financial', 'BasicMaterials', 'ConsumerGoods', 'Technology',
+        'HealthCare', 'Other')),
+    CONSTRAINT ck_cva_result_credit_quality CHECK (credit_quality IN ('IG', 'HYNR')),
+    CONSTRAINT ck_cva_result_risk_weight CHECK (risk_weight >= 0 AND risk_weight <= 1),
+    CONSTRAINT ck_cva_result_scva CHECK (scva >= 0),
     CONSTRAINT ck_cva_result_currency CHECK (currency ~ '^[A-Z]{3}$'),
     CONSTRAINT ck_cva_result_lineage CHECK (lineage IN ('Real', 'Transformed', 'Synthetic'))
 ) PARTITION BY RANGE (as_of_date);
 
+-- Netting set inputs of SCVA: effective maturity M, EAD and supervisory discount factor DF.
+CREATE TABLE calc.cva_netting_set (
+    id uuid NOT NULL,
+    as_of_date date NOT NULL,
+    cva_result_id uuid NOT NULL,
+    legal_entity_id uuid NOT NULL,
+    counterparty_id uuid NOT NULL,
+    netting_set_id uuid NOT NULL,
+    m_ns numeric(18, 10) NOT NULL,
+    ead_ns numeric(28, 8) NOT NULL,
+    df_ns numeric(18, 10) NOT NULL,
+    currency char(3) NOT NULL,
+    method_version_id varchar(32) NOT NULL,
+    lineage varchar(16) NOT NULL,
+    source_id varchar(64),
+    ingestion_run_id uuid,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT pk_cva_netting_set PRIMARY KEY (as_of_date, id),
+    CONSTRAINT uq_cva_netting_set UNIQUE (as_of_date, cva_result_id, netting_set_id),
+    CONSTRAINT fk_cva_netting_set_netting_set FOREIGN KEY (netting_set_id, legal_entity_id, counterparty_id)
+        REFERENCES portfolio.netting_set (id, legal_entity_id, counterparty_id),
+    CONSTRAINT fk_cva_netting_set_method FOREIGN KEY (method_version_id) REFERENCES meta.method_version (id),
+    CONSTRAINT fk_cva_netting_set_source FOREIGN KEY (source_id) REFERENCES meta.data_source (id),
+    CONSTRAINT fk_cva_netting_set_run FOREIGN KEY (ingestion_run_id) REFERENCES meta.ingestion_run (id),
+    CONSTRAINT ck_cva_netting_set_values CHECK (m_ns >= 0 AND ead_ns >= 0 AND df_ns > 0 AND df_ns <= 1),
+    CONSTRAINT ck_cva_netting_set_currency CHECK (currency ~ '^[A-Z]{3}$'),
+    CONSTRAINT ck_cva_netting_set_lineage CHECK (lineage IN ('Real', 'Transformed', 'Synthetic'))
+) PARTITION BY RANGE (as_of_date);
+
+-- Portfolio level of a legal entity: K_reduced with its correlation rho and discount scalar DS.
+CREATE TABLE calc.cva_portfolio (
+    id uuid NOT NULL,
+    as_of_date date NOT NULL,
+    legal_entity_id uuid NOT NULL,
+    cva_approach varchar(16) NOT NULL,
+    k_reduced numeric(28, 8) NOT NULL,
+    rho numeric(6, 5) NOT NULL,
+    ds numeric(6, 5) NOT NULL,
+    own_funds numeric(28, 8) NOT NULL,
+    currency char(3) NOT NULL,
+    method_version_id varchar(32) NOT NULL,
+    lineage varchar(16) NOT NULL,
+    source_id varchar(64),
+    ingestion_run_id uuid,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT pk_cva_portfolio PRIMARY KEY (as_of_date, id),
+    CONSTRAINT uq_cva_portfolio UNIQUE (as_of_date, legal_entity_id, method_version_id),
+    CONSTRAINT fk_cva_portfolio_legal_entity FOREIGN KEY (legal_entity_id) REFERENCES ref.legal_entity (id),
+    CONSTRAINT fk_cva_portfolio_method FOREIGN KEY (method_version_id) REFERENCES meta.method_version (id),
+    CONSTRAINT fk_cva_portfolio_source FOREIGN KEY (source_id) REFERENCES meta.data_source (id),
+    CONSTRAINT fk_cva_portfolio_run FOREIGN KEY (ingestion_run_id) REFERENCES meta.ingestion_run (id),
+    CONSTRAINT ck_cva_portfolio_approach CHECK (cva_approach IN ('ReducedBaCva', 'FullBaCva')),
+    CONSTRAINT ck_cva_portfolio_values CHECK (k_reduced >= 0 AND own_funds >= 0 AND rho BETWEEN 0 AND 1 AND ds > 0 AND ds <= 1),
+    CONSTRAINT ck_cva_portfolio_currency CHECK (currency ~ '^[A-Z]{3}$'),
+    CONSTRAINT ck_cva_portfolio_lineage CHECK (lineage IN ('Real', 'Transformed', 'Synthetic'))
+) PARTITION BY RANGE (as_of_date);
 -- Allocation of a netting set figure to its trades with the documented rule (ADR-002 §5).
 -- No foreign key to the partitioned trade table: both are purged partition by partition.
 CREATE TABLE calc.allocation_result (
@@ -203,17 +306,24 @@ CREATE TABLE calc.allocation_result (
     CONSTRAINT ck_allocation_result_lineage CHECK (lineage IN ('Real', 'Transformed', 'Synthetic'))
 ) PARTITION BY RANGE (as_of_date);
 
--- Access paths shared by every calc table: (as_of_date, netting set / counterparty / legal entity)
--- B-tree, plus BRIN on as_of_date for range scans of large partitions.
+-- Access paths shared by the calc tables: (as_of_date, netting set / counterparty / legal entity)
+-- B-tree where the column exists, plus BRIN on as_of_date for range scans of large partitions.
 DO $idx$
 DECLARE
     v_table text;
+    v_column text;
 BEGIN
-    FOREACH v_table IN ARRAY ARRAY['exposure_result', 'saccr_result', 'profile_point', 'rwa_result', 'cva_result', 'allocation_result']
+    FOREACH v_table IN ARRAY ARRAY['exposure_result', 'saccr_result', 'saccr_addon', 'profile_point', 'rwa_result',
+                                   'cva_result', 'cva_netting_set', 'cva_portfolio', 'allocation_result']
     LOOP
-        EXECUTE format('CREATE INDEX %I ON calc.%I (as_of_date, netting_set_id)', 'ix_' || v_table || '_as_of_netting_set', v_table);
-        EXECUTE format('CREATE INDEX %I ON calc.%I (as_of_date, counterparty_id)', 'ix_' || v_table || '_as_of_counterparty', v_table);
-        EXECUTE format('CREATE INDEX %I ON calc.%I (as_of_date, legal_entity_id)', 'ix_' || v_table || '_as_of_legal_entity', v_table);
+        FOREACH v_column IN ARRAY ARRAY['netting_set_id', 'counterparty_id', 'legal_entity_id']
+        LOOP
+            IF EXISTS (SELECT 1 FROM pg_catalog.pg_attribute
+                       WHERE attrelid = format('calc.%I', v_table)::regclass AND attname = v_column AND NOT attisdropped) THEN
+                EXECUTE format('CREATE INDEX %I ON calc.%I (as_of_date, %I)',
+                    'ix_' || v_table || '_as_of_' || replace(v_column, '_id', ''), v_table, v_column);
+            END IF;
+        END LOOP;
         EXECUTE format('CREATE INDEX %I ON calc.%I USING brin (as_of_date)', 'brin_' || v_table || '_as_of_date', v_table);
     END LOOP;
 END

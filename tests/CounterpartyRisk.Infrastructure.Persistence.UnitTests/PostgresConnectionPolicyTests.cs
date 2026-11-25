@@ -74,4 +74,26 @@ public class PostgresConnectionPolicyTests
         hardened.IncludeErrorDetail.ShouldBeTrue();
         hardened.Username.ShouldBe("cr_reader");
     }
+
+    [Fact]
+    public void Transport_policy_accepts_the_migrator_but_still_requires_tls_outside_development()
+    {
+        const string Migrator = "Host=db.internal;Database=ccr;Username=cr_migrator";
+
+        new NpgsqlConnectionStringBuilder(PostgresConnectionPolicy.HardenTransport(Migrator, isDevelopment: true)).Username.ShouldBe("cr_migrator");
+        Should.Throw<InvalidOperationException>(() => PostgresConnectionPolicy.HardenTransport(Migrator, isDevelopment: false));
+        new NpgsqlConnectionStringBuilder(PostgresConnectionPolicy.HardenTransport(Migrator + ";SSL Mode=VerifyFull;Include Error Detail=true", isDevelopment: false))
+            .IncludeErrorDetail.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Migration_context_applies_the_transport_policy()
+    {
+        Should.Throw<InvalidOperationException>(() =>
+            CounterpartyRiskDbContext.ForMigrations("Host=db.internal;Database=ccr;Username=cr_migrator", isDevelopment: false));
+
+        using var context = CounterpartyRiskDbContext.ForMigrations(
+            "Host=db.internal;Database=ccr;Username=cr_migrator;SSL Mode=VerifyFull", isDevelopment: false);
+        context.ShouldNotBeNull();
+    }
 }

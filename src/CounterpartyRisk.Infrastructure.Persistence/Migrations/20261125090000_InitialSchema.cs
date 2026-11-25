@@ -18,7 +18,7 @@ public sealed class InitialSchema : Migration
     {
         ArgumentNullException.ThrowIfNull(migrationBuilder);
 
-        foreach (var file in SqlScripts.FilesOf(MigrationId))
+        foreach (var file in SqlScripts.RequireFilesOf(MigrationId))
         {
             migrationBuilder.Sql(SqlScripts.Load(MigrationId, file));
         }

@@ -1,3 +1,4 @@
+using CounterpartyRisk.Infrastructure.Persistence.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Infrastructure;
 
@@ -28,13 +29,16 @@ public sealed class CounterpartyRiskDbContext : DbContext
         npgsql.MigrationsHistoryTable(HistoryTable, HistorySchema);
     }
 
-    /// <summary>Builds the context for a migration run with the <c>cr_migrator</c> connection.</summary>
-    public static CounterpartyRiskDbContext ForMigrations(string migratorConnectionString)
+    /// <summary>
+    /// Builds the context for a migration run with the <c>cr_migrator</c> connection. The transport
+    /// rules of <see cref="PostgresConnectionPolicy"/> apply (VerifyFull outside Development).
+    /// </summary>
+    public static CounterpartyRiskDbContext ForMigrations(string migratorConnectionString, bool isDevelopment)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(migratorConnectionString);
+        var hardened = PostgresConnectionPolicy.HardenTransport(migratorConnectionString, isDevelopment);
 
         var options = new DbContextOptionsBuilder<CounterpartyRiskDbContext>()
-            .UseNpgsql(migratorConnectionString, ConfigureNpgsql)
+            .UseNpgsql(hardened, ConfigureNpgsql)
             .Options;
 
         return new CounterpartyRiskDbContext(options);

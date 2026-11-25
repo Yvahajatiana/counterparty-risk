@@ -123,7 +123,7 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     public async Task MigrateAsync(string database)
     {
-        var context = CounterpartyRiskDbContext.ForMigrations(ConnectionString("cr_migrator", database));
+        var context = CounterpartyRiskDbContext.ForMigrations(ConnectionString("cr_migrator", database), isDevelopment: true);
         await using (context.ConfigureAwait(false))
         {
             await context.Database.MigrateAsync().ConfigureAwait(false);
@@ -187,14 +187,7 @@ public sealed class PostgresFixture : IAsyncLifetime
     {
         LegalEntityId[] all = [Seed.EntityA, Seed.EntityB];
 
-        // Data sources are governed reference rows: no service identity writes them (see the PR).
-        await ExecuteAsync(
-            "cr_migrator",
-            """
-            INSERT INTO meta.data_source (id, name, licence, url, attribution)
-            VALUES ('synthetic-portfolio', 'Synthetic portfolio', 'Project', 'https://example.org/synthetic', 'Synthetic data.')
-            """).ConfigureAwait(false);
-
+        // meta.data_source is seeded by the migration (synthetic-portfolio included).
         await ExecuteAsync(
             "cr_writer",
             """
@@ -206,9 +199,9 @@ public sealed class PostgresFixture : IAsyncLifetime
             VALUES (@counterparty, '969500CCCCCCCCCCCC03', 'Counterparty C', 'Institution', 'Synthetic', 'synthetic-portfolio');
             INSERT INTO ref.business_line (id, code, name) VALUES (@businessLine, 'BL-RATES', 'Rates');
             INSERT INTO ref.desk (id, business_line_id, code, name) VALUES (@desk, @businessLine, 'DESK-1', 'Desk 1');
-            INSERT INTO portfolio.netting_set (id, legal_entity_id, counterparty_id, agreement_type, clearing_mode, lineage, source_id)
-            VALUES (@nettingSetA, @entityA, @counterparty, 'Isda', 'Bilateral', 'Synthetic', 'synthetic-portfolio'),
-                   (@nettingSetB, @entityB, @counterparty, 'Isda', 'Bilateral', 'Synthetic', 'synthetic-portfolio');
+            INSERT INTO portfolio.netting_set (id, legal_entity_id, counterparty_id, agreement_type, margin_agreement, clearing_mode, lineage, source_id)
+            VALUES (@nettingSetA, @entityA, @counterparty, 'Isda', 'None', 'Bilateral', 'Synthetic', 'synthetic-portfolio'),
+                   (@nettingSetB, @entityB, @counterparty, 'Isda', 'None', 'Bilateral', 'Synthetic', 'synthetic-portfolio');
             INSERT INTO portfolio.trade (id, as_of_date, netting_set_id, legal_entity_id, counterparty_id, trade_type, asset_class,
                 business_line_id, desk_id, notional, notional_currency, mtm, mtm_currency, trade_date, maturity_date, lineage, source_id)
             SELECT gen_random_uuid(), @asOf, ns.id, ns.legal_entity_id, ns.counterparty_id, 'Otc', 'InterestRate',

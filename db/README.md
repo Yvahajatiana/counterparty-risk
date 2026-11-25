@@ -23,6 +23,7 @@ identities and their rights are defined in [docs/security/data-flow.md](../docs/
 
 ```powershell
 # Bundle (CI / release); the connection comes from the secret store at run time
+# The --connection value replaces the design-time one as is: use SSL Mode=VerifyFull outside local.
 dotnet ef migrations bundle --project src/CounterpartyRisk.Infrastructure.Persistence --self-contained -o efbundle.exe
 ./efbundle.exe --connection "<cr_migrator connection string>"
 
@@ -40,8 +41,11 @@ dotnet ef migrations script --idempotent --project src/CounterpartyRisk.Infrastr
   partitions (and applies RLS to them).
 - Enumerations are `varchar` + `CHECK` on the member names of the `Domain.Contracts` enums; add the
   constraint to `MigrationTests.EnumChecks`.
-- Default privileges grant future tables to `cr_reader` / `cr_writer` per schema: a table that another
-  role must own exclusively (limit tables of #27) revokes them explicitly.
+- Default privileges grant future tables to `cr_reader` (SELECT) and `cr_writer` (`ref`, `market`, `bench`,
+  `reporting`: SELECT/INSERT/UPDATE; `calc`: SELECT/INSERT only; `staging`). `portfolio` has no default write
+  grant: each new portfolio table grants its writer explicitly (limit tables of #27 to `cr_limit_writer`).
+- Partitions whose month already has rows in `DEFAULT` are created by moving those rows; a table that still
+  fails is skipped and recorded in `meta.risk_event` (`PartitionMaintenanceFailed`).
 
 ## Reading with row-level security
 

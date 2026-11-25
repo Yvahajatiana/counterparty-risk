@@ -27,6 +27,8 @@ public sealed class RoleTests(PostgresFixture db)
         "DROP TABLE portfolio.trade",
         "DELETE FROM portfolio.trade",
         "TRUNCATE calc.exposure_result",
+        "UPDATE calc.exposure_result SET amount = 0",
+        "DELETE FROM calc.exposure_result",
         "ALTER TABLE portfolio.trade DISABLE ROW LEVEL SECURITY",
         "DROP POLICY le_isolation ON portfolio.trade",
         "CREATE TABLE staging.rogue (id int)",
@@ -199,6 +201,18 @@ public sealed class RoleTests(PostgresFixture db)
 
         (await db.ScalarAsync<long>("cr_audit_writer", "SELECT count(*) FROM (SELECT seq, hash FROM audit.audit_event) e")).ShouldBeGreaterThan(0);
 
+        // INSERT ... RETURNING of the generated values, as EF Core does (#10).
+        (await db.ScalarAsync<long>(
+            "cr_audit_writer",
+            "INSERT INTO audit.audit_event (event_type, payload, hash) VALUES ('Test', '{}', decode(repeat('ab', 32), 'hex')) RETURNING seq"))
+            .ShouldBeGreaterThan(0);
+        await db.ScalarAsync<DateTime>(
+            "cr_audit_writer",
+            "INSERT INTO audit.audit_event (event_type, payload, hash) VALUES ('Test', '{}', decode(repeat('ab', 32), 'hex')) RETURNING occurred_at");
+        await FailsWithAsync(InsufficientPrivilege, () => db.ScalarAsync<object>(
+            "cr_audit_writer",
+            "INSERT INTO audit.audit_event (event_type, payload, hash) VALUES ('Test', '{}', decode(repeat('ab', 32), 'hex')) RETURNING payload"));
+
         await FailsWithAsync(InsufficientPrivilege, () => db.ScalarAsync<object>("cr_audit_writer", "SELECT payload FROM audit.audit_event LIMIT 1"));
         await FailsWithAsync(InsufficientPrivilege, () => db.ScalarAsync<object>("cr_audit_writer", "SELECT * FROM audit.audit_event LIMIT 1"));
         await FailsWithAsync(InsufficientPrivilege, () => db.ExecuteAsync("cr_audit_writer", "UPDATE audit.audit_event SET event_type = 'x'"));
@@ -222,9 +236,15 @@ public sealed class RoleTests(PostgresFixture db)
     [Fact]
     public async Task Audit_Events_Are_Append_Only_Even_For_The_Owner()
     {
+        // Own row first: the result must not depend on the order of the tests.
+        await db.ExecuteAsync(
+            "cr_audit_writer", "INSERT INTO audit.audit_event (event_type, payload, hash) VALUES ('Test', '{}', decode(repeat('ab', 32), 'hex'))");
+
         await FailsWithAsync(InsufficientPrivilege, () => db.ExecuteAsync("cr_migrator", "UPDATE audit.audit_event SET event_type = 'x'"));
         await FailsWithAsync(InsufficientPrivilege, () => db.ExecuteAsync("cr_migrator", "DELETE FROM audit.audit_event"));
         await FailsWithAsync(InsufficientPrivilege, () => db.ExecuteAsync("cr_migrator", "TRUNCATE audit.audit_event"));
+        // A statement that matches no row is refused too (statement-level trigger).
+        await FailsWithAsync(InsufficientPrivilege, () => db.ExecuteAsync("cr_migrator", "DELETE FROM audit.audit_event WHERE seq < 0"));
     }
 
     [Fact]
@@ -261,12 +281,20 @@ public sealed class RoleTests(PostgresFixture db)
     {
         // A table created later by a migration (as cr_owner) is readable by cr_reader and writable by
         // cr_writer without any explicit grant; in staging only, cr_writer may also delete.
-        await db.ExecuteAsync("cr_migrator", "CREATE TABLE calc.future_result (id int PRIMARY KEY); CREATE TABLE staging.future_load (id int)");
+        await db.ExecuteAsync(
+            "cr_migrator",
+            "CREATE TABLE calc.future_result (id int PRIMARY KEY); CREATE TABLE staging.future_load (id int); CREATE TABLE portfolio.future_limit (id int)");
         try
         {
             (await db.ExecuteAsync("cr_writer", "INSERT INTO calc.future_result VALUES (1)")).ShouldBe(1);
             (await db.ScalarAsync<long>("cr_reader", "SELECT count(*) FROM calc.future_result")).ShouldBe(1);
             await FailsWithAsync(InsufficientPrivilege, () => db.ExecuteAsync("cr_writer", "DELETE FROM calc.future_result"));
+            // calc is INSERT-only for the writer (TM-TB4-07).
+            await FailsWithAsync(InsufficientPrivilege, () => db.ExecuteAsync("cr_writer", "UPDATE calc.future_result SET id = 2"));
+
+            // portfolio: no default write grant (limit tables of #27 are granted explicitly).
+            await FailsWithAsync(InsufficientPrivilege, () => db.ExecuteAsync("cr_writer", "INSERT INTO portfolio.future_limit VALUES (1)"));
+            (await db.ScalarAsync<long>("cr_reader", "SELECT count(*) FROM portfolio.future_limit")).ShouldBe(0);
 
             (await db.ExecuteAsync("cr_writer", "INSERT INTO staging.future_load VALUES (1)")).ShouldBe(1);
             (await db.ExecuteAsync("cr_writer", "DELETE FROM staging.future_load")).ShouldBe(1);
@@ -274,7 +302,7 @@ public sealed class RoleTests(PostgresFixture db)
         }
         finally
         {
-            await db.ExecuteAsync("cr_migrator", "DROP TABLE calc.future_result; DROP TABLE staging.future_load");
+            await db.ExecuteAsync("cr_migrator", "DROP TABLE calc.future_result; DROP TABLE staging.future_load; DROP TABLE portfolio.future_limit");
         }
     }
 }

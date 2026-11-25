@@ -33,6 +33,12 @@ CREATE TRIGGER trg_audit_event_append_only
     BEFORE UPDATE OR DELETE ON audit.audit_event
     FOR EACH ROW EXECUTE FUNCTION audit.reject_change();
 
+-- Statement level as well: a row trigger does not fire when no row matches, so an UPDATE or
+-- DELETE would otherwise be accepted on an empty table or with a selective WHERE.
+CREATE TRIGGER trg_audit_event_append_only_statement
+    BEFORE UPDATE OR DELETE ON audit.audit_event
+    FOR EACH STATEMENT EXECUTE FUNCTION audit.reject_change();
+
 CREATE TRIGGER trg_audit_event_no_truncate
     BEFORE TRUNCATE ON audit.audit_event
     FOR EACH STATEMENT EXECUTE FUNCTION audit.reject_change();

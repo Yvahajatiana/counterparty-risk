@@ -44,8 +44,9 @@ public sealed class RowLevelSecurityTests(PostgresFixture db)
 
         tables.ShouldBe(
         [
-            "calc.allocation_result", "calc.cva_result", "calc.exposure_result", "calc.profile_point", "calc.rwa_result",
-            "calc.saccr_result", "portfolio.collateral_position", "portfolio.trade",
+            "calc.allocation_result", "calc.cva_netting_set", "calc.cva_portfolio", "calc.cva_result", "calc.exposure_result",
+            "calc.profile_point", "calc.rwa_result", "calc.saccr_addon", "calc.saccr_result", "portfolio.collateral_position",
+            "portfolio.trade",
         ]);
     }
 

@@ -29,13 +29,36 @@ public sealed class LegalEntityScopeEfCoreTests(PostgresFixture db)
     }
 
     [Fact]
-    public async Task Query_Outside_A_Transaction_Fails_Closed()
+    public async Task Commands_Outside_A_Transaction_Fail_Loudly()
     {
-        await using var provider = Build("cr_reader", [Seed.EntityA]);
+        await using var provider = Build("cr_writer", [Seed.EntityA]);
+        await using var scope = provider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<TradeReadContext>();
+        var ct = TestContext.Current.CancellationToken;
+
+        // Without a transaction RLS would silently read or change zero row: refused instead.
+        await Should.ThrowAsync<InvalidOperationException>(() => context.Trades.CountAsync(ct));
+        await Should.ThrowAsync<InvalidOperationException>(() => context.Trades.ExecuteUpdateAsync(s => s.SetProperty(t => t.Mtm, t => t.Mtm), ct));
+        await Should.ThrowAsync<InvalidOperationException>(() => context.Trades.Where(t => t.Mtm < 0).ExecuteDeleteAsync(ct));
+        await Should.ThrowAsync<InvalidOperationException>(() => context.Database.ExecuteSqlAsync($"UPDATE portfolio.trade SET mtm = mtm", ct));
+
+        // The same bulk update inside the scope transaction works.
+        var updated = await context.Database.InLegalEntityScopeAsync(
+            token => context.Trades.ExecuteUpdateAsync(s => s.SetProperty(t => t.Mtm, t => t.Mtm), token), ct);
+        updated.ShouldBe(Seed.TradesA);
+    }
+
+    [Fact]
+    public async Task Scope_Helper_Works_With_Retry_On_Failure()
+    {
+        await using var provider = Build("cr_reader", [Seed.EntityA], retry: true);
         await using var scope = provider.CreateAsyncScope();
         var context = scope.ServiceProvider.GetRequiredService<TradeReadContext>();
 
-        (await context.Trades.CountAsync(TestContext.Current.CancellationToken)).ShouldBe(0);
+        var count = await context.Database.InLegalEntityScopeAsync(
+            ct => context.Trades.CountAsync(ct), TestContext.Current.CancellationToken);
+
+        count.ShouldBe(Seed.TradesA);
     }
 
     [Fact]
@@ -64,6 +87,8 @@ public sealed class LegalEntityScopeEfCoreTests(PostgresFixture db)
         tradeA.Mtm += 0m;
         context.Entry(tradeA).Property(t => t.Mtm).IsModified = true;
         (await context.SaveChangesAsync(TestContext.Current.CancellationToken)).ShouldBe(1);
+        // The forced transaction is limited to SaveChanges: the context setting is restored.
+        context.Database.AutoTransactionBehavior.ShouldBe(AutoTransactionBehavior.WhenNeeded);
 
         context.Trades.Add(new TradeRow
         {
@@ -76,7 +101,7 @@ public sealed class LegalEntityScopeEfCoreTests(PostgresFixture db)
         exception.InnerException.ShouldBeOfType<Npgsql.PostgresException>().SqlState.ShouldBe(DatabaseAssert.InsufficientPrivilege);
     }
 
-    private ServiceProvider Build(string role, LegalEntityId[]? scope)
+    private ServiceProvider Build(string role, LegalEntityId[]? scope, bool retry = false)
     {
         var services = new ServiceCollection();
         if (scope is not null)
@@ -85,7 +110,8 @@ public sealed class LegalEntityScopeEfCoreTests(PostgresFixture db)
         }
 
         // Development: the test container has no TLS.
-        services.AddCounterpartyRiskDbContext<TradeReadContext>(db.ConnectionString(role), isDevelopment: true);
+        services.AddCounterpartyRiskDbContext<TradeReadContext>(
+            db.ConnectionString(role), isDevelopment: true, npgsql => { if (retry) { npgsql.EnableRetryOnFailure(); } });
         return services.BuildServiceProvider();
     }
 

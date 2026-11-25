@@ -22,12 +22,22 @@ public static class LegalEntityScopeExtensions
             return await work(cancellationToken).ConfigureAwait(false);
         }
 
-        var transaction = await database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        await using (transaction.ConfigureAwait(false))
-        {
-            var result = await work(cancellationToken).ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return result;
-        }
+        // Through the execution strategy, so that EnableRetryOnFailure retries the whole unit
+        // (transaction + scope + work); a retrying strategy refuses a user transaction otherwise.
+        var strategy = database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(
+            (database, work),
+            static async (_, state, ct) =>
+            {
+                var transaction = await state.database.BeginTransactionAsync(ct).ConfigureAwait(false);
+                await using (transaction.ConfigureAwait(false))
+                {
+                    var result = await state.work(ct).ConfigureAwait(false);
+                    await transaction.CommitAsync(ct).ConfigureAwait(false);
+                    return result;
+                }
+            },
+            verifySucceeded: null,
+            cancellationToken).ConfigureAwait(false);
     }
 }

@@ -12,9 +12,12 @@ VALUES
     ('market', 'yield_curve_param'),
     ('calc', 'exposure_result'),
     ('calc', 'saccr_result'),
+    ('calc', 'saccr_addon'),
     ('calc', 'profile_point'),
     ('calc', 'rwa_result'),
     ('calc', 'cva_result'),
+    ('calc', 'cva_netting_set'),
+    ('calc', 'cva_portfolio'),
     ('calc', 'allocation_result')
 ON CONFLICT (table_schema, table_name) DO NOTHING;
 
@@ -40,13 +43,6 @@ BEGIN
 END
 $rls$;
 
--- Partitions M-1 .. M+3 and the DEFAULT partitions (partitions inherit the isolation policy).
-DO $partitions$
-BEGIN
-    PERFORM meta.ensure_partitions((current_date - interval '1 month')::date, 5);
-END
-$partitions$;
-
 -- Business events: read by the reader roles, inserted by cr_governance_writer with the
 -- HistoryCorrection type only (data-flow.md).
 ALTER TABLE meta.risk_event ENABLE ROW LEVEL SECURITY;
@@ -54,6 +50,17 @@ ALTER TABLE meta.risk_event FORCE ROW LEVEL SECURITY;
 CREATE POLICY risk_event_read ON meta.risk_event FOR SELECT TO cr_reader, cr_writer USING (true);
 CREATE POLICY risk_event_history_correction ON meta.risk_event FOR INSERT TO cr_governance_writer
     WITH CHECK (event_type = 'HistoryCorrection');
+-- meta.ensure_partitions (SECURITY DEFINER, cr_owner) records the tables it had to skip.
+CREATE POLICY risk_event_partition_maintenance ON meta.risk_event FOR INSERT TO cr_owner
+    WITH CHECK (event_type = 'PartitionMaintenanceFailed');
+
+-- Partitions M-1 .. M+3 and the DEFAULT partitions. Policies are NOT inherited by partitions:
+-- meta.ensure_partitions applies the isolation policy to each partition it creates.
+DO $partitions$
+BEGIN
+    PERFORM meta.ensure_partitions((current_date - interval '1 month')::date, 5);
+END
+$partitions$;
 
 -- ---------------------------------------------------------------- schema usage
 
@@ -80,19 +87,25 @@ ALTER DEFAULT PRIVILEGES FOR ROLE cr_owner IN SCHEMA ref, portfolio, financing, 
 
 -- ---------------------------------------------------------------- cr_writer (workers, all-entities scope)
 
-GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA ref, portfolio, market, bench, calc, reporting TO cr_writer;
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA ref, portfolio, market, bench, reporting TO cr_writer;
+-- Calculation results are snapshots: INSERT only, a recalculation writes new rows (TM-TB4-07).
+GRANT SELECT, INSERT ON ALL TABLES IN SCHEMA calc TO cr_writer;
 GRANT INSERT ON ALL TABLES IN SCHEMA financing TO cr_writer;
 GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA staging TO cr_writer;
 GRANT SELECT, INSERT, UPDATE ON meta.ingestion_run, meta.dq_result TO cr_writer;
 GRANT SELECT ON meta.data_source, meta.method_version, meta.active_method_version, meta.risk_event TO cr_writer;
 
-ALTER DEFAULT PRIVILEGES FOR ROLE cr_owner IN SCHEMA ref, portfolio, market, bench, calc, reporting
+-- No default write grant in portfolio: limit tables belong to cr_limit_writer (#27), so every new
+-- portfolio table is granted explicitly by its migration (deny by default).
+ALTER DEFAULT PRIVILEGES FOR ROLE cr_owner IN SCHEMA ref, market, bench, reporting
     GRANT SELECT, INSERT, UPDATE ON TABLES TO cr_writer;
+ALTER DEFAULT PRIVILEGES FOR ROLE cr_owner IN SCHEMA calc
+    GRANT SELECT, INSERT ON TABLES TO cr_writer;
 ALTER DEFAULT PRIVILEGES FOR ROLE cr_owner IN SCHEMA financing
     GRANT INSERT ON TABLES TO cr_writer;
 ALTER DEFAULT PRIVILEGES FOR ROLE cr_owner IN SCHEMA staging
     GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON TABLES TO cr_writer;
-ALTER DEFAULT PRIVILEGES FOR ROLE cr_owner IN SCHEMA ref, portfolio, financing, market, bench, calc, reporting, staging
+ALTER DEFAULT PRIVILEGES FOR ROLE cr_owner IN SCHEMA ref, financing, market, bench, calc, reporting, staging
     GRANT USAGE ON SEQUENCES TO cr_writer;
 
 -- ---------------------------------------------------------------- cr_limit_writer (API, limit tables)
@@ -122,8 +135,9 @@ GRANT EXECUTE ON FUNCTION meta.purge_partitions(text, text, date) TO cr_partitio
 -- ---------------------------------------------------------------- audit, key rings, sessions
 
 GRANT INSERT ON audit.audit_event TO cr_audit_writer;
--- Only what the writer needs to chain the previous hash (TM-TB4-03).
-GRANT SELECT (seq, hash) ON audit.audit_event TO cr_audit_writer;
+-- Only what the writer needs to chain the previous hash (TM-TB4-03) and the generated values an
+-- INSERT ... RETURNING reads back (EF Core, #10): never the payload nor the actor.
+GRANT SELECT (seq, occurred_at, hash) ON audit.audit_event TO cr_audit_writer;
 GRANT SELECT ON audit.audit_event TO cr_audit_reader, cr_audit_verifier;
 
 GRANT SELECT, INSERT ON dpkeys.api_key TO cr_api_keys;

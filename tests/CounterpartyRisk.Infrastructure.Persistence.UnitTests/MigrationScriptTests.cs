@@ -20,6 +20,13 @@ public partial class MigrationScriptTests
     }
 
     [Fact]
+    public void Migration_without_scripts_is_refused()
+    {
+        Should.Throw<InvalidOperationException>(() => SqlScripts.RequireFilesOf("20990101000000_Missing"));
+        SqlScripts.RequireFilesOf(InitialSchema.MigrationId).ShouldNotBeEmpty();
+    }
+
+    [Fact]
     public void Unknown_script_is_reported()
     {
         Should.Throw<InvalidOperationException>(() => SqlScripts.Load(InitialSchema.MigrationId, "99_missing.sql"));

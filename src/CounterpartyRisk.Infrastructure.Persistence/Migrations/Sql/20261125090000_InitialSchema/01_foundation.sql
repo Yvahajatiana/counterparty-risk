@@ -82,13 +82,15 @@ $fn$;
 -- their own migrations, #43 and #10).
 CREATE TABLE IF NOT EXISTS meta.partitioned_table (
     table_schema varchar(63) NOT NULL,
-    table_name varchar(56) NOT NULL,
+    -- 55 characters at most: the longest partition suffix (_default, _pYYYYMM) adds 8 and the
+    -- PostgreSQL identifier limit is 63; a longer name would be truncated silently and collide.
+    table_name varchar(55) NOT NULL,
     purgeable boolean NOT NULL DEFAULT true,
     min_retention_months integer NOT NULL DEFAULT 13,
     registered_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT pk_partitioned_table PRIMARY KEY (table_schema, table_name),
     CONSTRAINT ck_partitioned_table_identifiers
-        CHECK (table_schema ~ '^[a-z][a-z0-9_]*$' AND table_name ~ '^[a-z][a-z0-9_]*$'),
+        CHECK (table_schema ~ '^[a-z][a-z0-9_]{0,62}$' AND table_name ~ '^[a-z][a-z0-9_]{0,54}$'),
     CONSTRAINT ck_partitioned_table_retention CHECK (min_retention_months BETWEEN 1 AND 600),
     -- Audit partitions are only detached by a traced operating procedure (TM-TB4-14).
     CONSTRAINT ck_partitioned_table_audit_not_purgeable CHECK (table_schema <> 'audit' OR NOT purgeable)
@@ -100,6 +102,9 @@ COMMENT ON TABLE meta.partitioned_table IS
 -- Creates the DEFAULT partition and the monthly partitions [month(p_from), +p_months) of every
 -- registered table. Idempotent. SECURITY DEFINER owned by cr_owner: cr_partition_job only holds
 -- EXECUTE on it and never runs DDL directly (TM-TB4-14). Returns the number of partitions created.
+-- Rows that already landed in DEFAULT for a missing month are moved into the new partition in the
+-- same transaction. A table that still fails is skipped (its changes rolled back), recorded in
+-- meta.risk_event (PartitionMaintenanceFailed) and the other tables are processed.
 CREATE OR REPLACE FUNCTION meta.ensure_partitions(p_from date, p_months integer)
 RETURNS integer
 LANGUAGE plpgsql
@@ -113,7 +118,11 @@ DECLARE
     v_secure boolean;
     v_start date;
     v_month date;
+    v_next date;
     v_name text;
+    v_default text;
+    v_scope text;
+    v_table_created integer;
     v_created integer := 0;
 BEGIN
     IF p_from IS NULL OR p_months IS NULL THEN
@@ -134,41 +143,78 @@ BEGIN
 
     FOR t IN SELECT table_schema, table_name FROM meta.partitioned_table ORDER BY table_schema, table_name
     LOOP
-        v_parent := format('%I.%I', t.table_schema, t.table_name)::regclass;
-        SELECT relrowsecurity INTO v_secure FROM pg_class WHERE oid = v_parent;
+        v_table_created := 0;
+        v_month := NULL;
+        BEGIN
+            v_parent := format('%I.%I', t.table_schema, t.table_name)::regclass;
+            SELECT relrowsecurity INTO v_secure FROM pg_class WHERE oid = v_parent;
 
-        -- DEFAULT partition: must stay empty, a row there means a missing monthly partition.
-        v_name := t.table_name || '_default';
-        IF to_regclass(format('%I.%I', t.table_schema, v_name)) IS NULL THEN
-            EXECUTE format('CREATE TABLE %I.%I PARTITION OF %s DEFAULT', t.table_schema, v_name, v_parent);
-            IF v_secure THEN
-                PERFORM meta.apply_le_isolation(format('%I.%I', t.table_schema, v_name)::regclass);
+            -- DEFAULT partition: must stay empty, a row there means a missing monthly partition.
+            v_default := t.table_name || '_default';
+            IF to_regclass(format('%I.%I', t.table_schema, v_default)) IS NULL THEN
+                EXECUTE format('CREATE TABLE %I.%I PARTITION OF %s DEFAULT', t.table_schema, v_default, v_parent);
+                IF v_secure THEN
+                    PERFORM meta.apply_le_isolation(format('%I.%I', t.table_schema, v_default)::regclass);
+                END IF;
+                v_table_created := v_table_created + 1;
             END IF;
-            v_created := v_created + 1;
-        END IF;
 
-        FOR i IN 0 .. p_months - 1
-        LOOP
-            v_month := (v_start + make_interval(months => i))::date;
-            v_name := t.table_name || '_p' || to_char(v_month, 'YYYYMM');
-            IF to_regclass(format('%I.%I', t.table_schema, v_name)) IS NULL THEN
-                EXECUTE format(
-                    'CREATE TABLE %I.%I PARTITION OF %s FOR VALUES FROM (%L) TO (%L)',
-                    t.table_schema, v_name, v_parent, v_month, (v_month + interval '1 month')::date);
+            FOR i IN 0 .. p_months - 1
+            LOOP
+                v_month := (v_start + make_interval(months => i))::date;
+                v_next := (v_month + interval '1 month')::date;
+                v_name := t.table_name || '_p' || to_char(v_month, 'YYYYMM');
+                CONTINUE WHEN to_regclass(format('%I.%I', t.table_schema, v_name)) IS NOT NULL;
+
+                BEGIN
+                    EXECUTE format(
+                        'CREATE TABLE %I.%I PARTITION OF %s FOR VALUES FROM (%L) TO (%L)',
+                        t.table_schema, v_name, v_parent, v_month, v_next);
+                EXCEPTION WHEN check_violation THEN
+                    -- DEFAULT already holds rows of this month: move them into a standalone table,
+                    -- then attach it. The owner is subject to FORCE RLS, so the move runs with an
+                    -- all-entities scope, restored right after (and by the rollback on failure).
+                    v_scope := current_setting('app.legal_entity_ids', true);
+                    PERFORM set_config(
+                        'app.legal_entity_ids',
+                        coalesce((SELECT string_agg(id::text, ',') FROM ref.legal_entity), ''),
+                        true);
+                    EXECUTE format(
+                        'CREATE TABLE %I.%I (LIKE %s INCLUDING DEFAULTS INCLUDING CONSTRAINTS)',
+                        t.table_schema, v_name, v_parent);
+                    EXECUTE format(
+                        'WITH moved AS (DELETE FROM %I.%I WHERE as_of_date >= %L AND as_of_date < %L RETURNING *) '
+                        'INSERT INTO %I.%I SELECT * FROM moved',
+                        t.table_schema, v_default, v_month, v_next, t.table_schema, v_name);
+                    -- Still in the all-entities scope: validating the cloned foreign keys reads the
+                    -- referenced rows under row-level security.
+                    EXECUTE format(
+                        'ALTER TABLE %s ATTACH PARTITION %I.%I FOR VALUES FROM (%L) TO (%L)',
+                        v_parent, t.table_schema, v_name, v_month, v_next);
+                    PERFORM set_config('app.legal_entity_ids', coalesce(v_scope, ''), true);
+                END;
+
                 -- Policies are not inherited by partitions: a direct read of a partition must
                 -- not bypass the isolation of its parent.
                 IF v_secure THEN
                     PERFORM meta.apply_le_isolation(format('%I.%I', t.table_schema, v_name)::regclass);
                 END IF;
-                v_created := v_created + 1;
-            END IF;
-        END LOOP;
+                v_table_created := v_table_created + 1;
+            END LOOP;
+
+            v_created := v_created + v_table_created;
+        EXCEPTION WHEN OTHERS THEN
+            -- No row content in the event: table, month and SQLSTATE only.
+            INSERT INTO meta.risk_event (id, event_type, as_of_date, details)
+            VALUES (gen_random_uuid(), 'PartitionMaintenanceFailed', v_month,
+                    jsonb_build_object('table', t.table_schema || '.' || t.table_name, 'sqlstate', SQLSTATE));
+            RAISE WARNING 'Partition maintenance failed for %.% (SQLSTATE %)', t.table_schema, t.table_name, SQLSTATE;
+        END;
     END LOOP;
 
     RETURN v_created;
 END
 $fn$;
-
 -- Detaches and drops the monthly partitions of one registered, purgeable table that end on or
 -- before p_before, never inside the minimum retention of the table and never in audit.
 -- Returns the number of partitions dropped.

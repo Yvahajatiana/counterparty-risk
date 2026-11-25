@@ -196,6 +196,83 @@ public sealed class PartitionTests(PostgresFixture db)
         exception.SqlState.ShouldBe("23503");
     }
 
-    private Task<bool> Exists(string name) =>
-        db.ScalarAsync<bool>("cr_reader", "SELECT to_regclass(@name) IS NOT NULL", null, ("name", name));
+    [Fact]
+    public async Task Ensure_Partitions_Moves_Rows_Already_In_Default_Into_The_New_Partition()
+    {
+        // Beyond M+3: no partition yet, so the rows land in DEFAULT.
+        var month = db.CurrentMonth.AddMonths(6);
+        var asOf = month.AddDays(3);
+        await db.ExecuteAsync(
+            "cr_writer",
+            "INSERT INTO market.fx_rate (as_of_date, base_ccy, quote_ccy, rate, lineage, source_id) VALUES (@asOf, 'EUR', 'GBP', 0.85, 'Real', 'ecb-exr')",
+            null,
+            ("asOf", asOf));
+        await db.ExecuteAsync(
+            "cr_writer",
+            """
+            INSERT INTO portfolio.trade (id, as_of_date, netting_set_id, legal_entity_id, counterparty_id, trade_type, asset_class,
+                business_line_id, desk_id, notional, notional_currency, mtm, mtm_currency, trade_date, maturity_date, lineage)
+            VALUES (gen_random_uuid(), @asOf, @nettingSet, @entityA, @counterparty, 'Otc', 'InterestRate', @businessLine, @desk,
+                1, 'EUR', 0, 'EUR', @asOf, @asOf, 'Synthetic')
+            """,
+            [Seed.EntityA],
+            ("asOf", asOf),
+            ("nettingSet", Seed.NettingSetA),
+            ("entityA", Seed.EntityA.Value),
+            ("counterparty", Seed.Counterparty),
+            ("businessLine", Seed.BusinessLine),
+            ("desk", Seed.Desk));
+        (await db.ScalarAsync<string>("cr_reader", "SELECT tableoid::regclass::text FROM market.fx_rate WHERE as_of_date = @asOf", null, ("asOf", asOf)))
+            .ShouldBe("market.fx_rate_default");
+
+        (await db.ScalarAsync<int>("cr_partition_job", "SELECT meta.ensure_partitions(@from, 1)", null, ("from", month))).ShouldBeGreaterThan(0);
+
+        (await db.ScalarAsync<string>("cr_reader", "SELECT tableoid::regclass::text FROM market.fx_rate WHERE as_of_date = @asOf", null, ("asOf", asOf)))
+            .ShouldBe($"market.fx_rate_p{month:yyyyMM}");
+        (await db.ScalarAsync<string>(
+            "cr_reader", "SELECT tableoid::regclass::text FROM portfolio.trade WHERE as_of_date = @asOf", [Seed.EntityA], ("asOf", asOf)))
+            .ShouldBe($"portfolio.trade_p{month:yyyyMM}");
+        (await db.ScalarAsync<bool>(
+            "cr_reader", "SELECT relforcerowsecurity FROM pg_class WHERE oid = @name::regclass", null, ("name", $"portfolio.trade_p{month:yyyyMM}")))
+            .ShouldBeTrue();
+        (await db.ScalarAsync<long>(
+            "cr_writer", "SELECT (SELECT count(*) FROM portfolio.trade_default) + (SELECT count(*) FROM market.fx_rate_default)",
+            [Seed.EntityA, Seed.EntityB]))
+            .ShouldBe(0);
+        // The all-entities scope used for the move does not leak into the caller's transaction.
+        (await db.ScalarAsync<string>(
+            "cr_partition_job",
+            "SELECT meta.ensure_partitions(@from, 1)::text || coalesce(current_setting('app.legal_entity_ids', true), '')",
+            null,
+            ("from", month)))
+            .ShouldBe("0");
+
+        // Leaves the seeded portfolio unchanged for the other tests (the owner may delete, the writer may not).
+        await db.ExecuteAsync("cr_migrator", "DELETE FROM portfolio.trade WHERE as_of_date = @asOf", [Seed.EntityA], ("asOf", asOf));
+    }
+
+    [Fact]
+    public async Task Ensure_Partitions_Skips_A_Failing_Table_Records_It_And_Continues()
+    {
+        var month = db.CurrentMonth.AddMonths(8);
+        // Sorted before every real table, so the run must continue after it.
+        await db.ExecuteAsync("cr_migrator", "INSERT INTO meta.partitioned_table (table_schema, table_name) VALUES ('bench', 'aaa_missing')");
+        try
+        {
+            (await db.ScalarAsync<int>("cr_partition_job", "SELECT meta.ensure_partitions(@from, 1)", null, ("from", month))).ShouldBeGreaterThan(0);
+
+            (await Exists($"market.fx_rate_p{month:yyyyMM}")).ShouldBeTrue();
+            (await Exists($"calc.exposure_result_p{month:yyyyMM}")).ShouldBeTrue();
+            (await db.ScalarAsync<long>(
+                "cr_reader",
+                "SELECT count(*) FROM meta.risk_event WHERE event_type = 'PartitionMaintenanceFailed' AND details ->> 'table' = 'bench.aaa_missing'"))
+                .ShouldBeGreaterThan(0);
+        }
+        finally
+        {
+            await db.ExecuteAsync("cr_migrator", "DELETE FROM meta.partitioned_table WHERE table_name = 'aaa_missing'");
+        }
+    }
+
+    private Task<bool> Exists(string name) =>        db.ScalarAsync<bool>("cr_reader", "SELECT to_regclass(@name) IS NOT NULL", null, ("name", name));
 }

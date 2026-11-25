@@ -3,15 +3,33 @@ using Npgsql;
 namespace CounterpartyRisk.Infrastructure.Persistence.Configuration;
 
 /// <summary>
-/// Hardens an application connection string (TM-TB4-04, TM-TB4-05): TLS with full certificate
-/// validation outside Development, no server error detail outside Development, and never the
-/// owner, migration or superuser identity for an application connection.
+/// Hardens a PostgreSQL connection string (TM-TB4-04, TM-TB4-05): TLS with full certificate
+/// validation outside Development and no server error detail outside Development; an application
+/// connection additionally never uses the owner, migration or superuser identity.
 /// </summary>
 public static class PostgresConnectionPolicy
 {
     private static readonly string[] ForbiddenApplicationUsers = ["postgres", "cr_owner", "cr_migrator"];
 
+    /// <summary>Application connection: transport rules plus a least-privilege cr_* identity.</summary>
     public static string Harden(string? connectionString, bool isDevelopment)
+    {
+        var builder = Parse(connectionString, isDevelopment);
+
+        if (ForbiddenApplicationUsers.Contains(builder.Username, StringComparer.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "An application connection uses a least-privilege cr_* identity, never the owner, migrator or superuser.");
+        }
+
+        return builder.ConnectionString;
+    }
+
+    /// <summary>Transport rules only, for the migration bundle (which connects as cr_migrator).</summary>
+    public static string HardenTransport(string? connectionString, bool isDevelopment) =>
+        Parse(connectionString, isDevelopment).ConnectionString;
+
+    private static NpgsqlConnectionStringBuilder Parse(string? connectionString, bool isDevelopment)
     {
         if (string.IsNullOrWhiteSpace(connectionString))
         {
@@ -34,12 +52,6 @@ public static class PostgresConnectionPolicy
             throw new InvalidOperationException("The PostgreSQL connection string must name a host, a database and a service identity.");
         }
 
-        if (ForbiddenApplicationUsers.Contains(builder.Username, StringComparer.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException(
-                "An application connection uses a least-privilege cr_* identity, never the owner, migrator or superuser.");
-        }
-
         if (!isDevelopment && builder.SslMode != SslMode.VerifyFull)
         {
             throw new InvalidOperationException("Outside Development, PostgreSQL connections require SSL Mode=VerifyFull.");
@@ -47,7 +59,6 @@ public static class PostgresConnectionPolicy
 
         // Server error details may carry row values (amounts, LEIs): Development only.
         builder.IncludeErrorDetail = isDevelopment;
-
-        return builder.ConnectionString;
+        return builder;
     }
 }

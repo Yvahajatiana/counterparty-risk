@@ -74,7 +74,8 @@ To save CI minutes, agents open their PR as a **draft** (CI does not run on draf
   - projects and namespaces `CounterpartyRisk.<Module>.<Layer>` (e.g. `CounterpartyRisk.RiskEngine.Domain`);
   - commands / queries / handlers: `XxxCommand`, `XxxQuery`, `XxxHandler` (handlers `internal sealed`);
   - repositories `IXxxRepository`; validators `XxxValidator`;
-  - database: one schema per module (`refdata`, `market`, `portfolio`, `risk`, `capital`, `reporting`),
+  - database: one schema per context (`ref`, `portfolio`, `financing`, `market`, `bench`, `calc`, `reporting`, `meta`,
+    plus `staging`, `audit`, `dpkeys`, `session`, `quartz`; see ADR-0001 and `db/README.md`),
     tables and columns in `snake_case`.
 - Minimal APIs only (no MVC controllers); the API exposes DTOs, never domain entities.
 - Banned libraries (licence): MediatR, AutoMapper, MassTransit, FluentAssertions, EPPlus, Duende.
