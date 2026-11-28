@@ -1,0 +1,27 @@
+# Production-like demo stack deployed by Dokploy (#99). Dokploy NEVER builds: the image is built,
+# scanned and pushed to GHCR by .github/workflows/release.yml, then pulled here.
+# Routing and TLS: Dokploy adds the Traefik labels and network from its Domains tab (no published port).
+# Rollback: set BFF_IMAGE_TAG=sha-<commit> in the Dokploy Environment tab and redeploy (see docs/deployment.md).
+# No container_name: it breaks Dokploy logs and metrics.
+
+services:
+  bff:
+    image: ghcr.io/yvahajatiana/counterparty-risk-bff:${BFF_IMAGE_TAG:-main}
+    # The "main" tag moves on every release: always pull instead of reusing a cached image
+    pull_policy: always
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Bff__UseMockData: "true"
+    # Reachable by Traefik only, never published on the host
+    expose:
+      - "8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    pids_limit: 256
+    restart: unless-stopped

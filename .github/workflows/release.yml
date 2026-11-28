@@ -1,0 +1,157 @@
+name: Release
+
+# Continuous delivery of the demo stack (#99): the BFF image (Angular front end included) is built
+# ONCE here, scanned, pushed to GHCR, then Dokploy is asked to redeploy. Dokploy never builds:
+# it only pulls the published image (compose.dokploy.yaml, see docs/deployment.md).
+# An image is pushed only if the blocking Trivy scan passes, and Dokploy is called only after the push.
+# Every action is pinned by full commit SHA (release tag in a trailing comment, bumped by Dependabot).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/CounterpartyRisk.Bff/**"
+      - "src/CounterpartyRisk.ServiceDefaults/**"
+      - "web/**"
+      - "global.json"
+      - "nuget.config"
+      - "Directory.Build.props"
+      - "Directory.Packages.props"
+      - ".dockerignore"
+      - "compose.dokploy.yaml"
+      - ".github/workflows/release.yml"
+  # Manual redeploy of the current main (for example after a Dokploy configuration change)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Releases run one after the other and are never cancelled: the moving "main" tag must always
+# end up on the latest commit that Dokploy deployed.
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+env:
+  DOCKERFILE: src/CounterpartyRisk.Bff/Dockerfile
+  TRIVY_VERSION: v0.76.1
+
+jobs:
+  publish:
+    name: Build, scan and push the BFF image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # A manual dispatch from another branch must never overwrite the "main" tag nor deploy
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      # Push to ghcr.io with the GITHUB_TOKEN (no personal token)
+      packages: write
+      # Signed build provenance attestation (Sigstore), stored next to the image
+      id-token: write
+      attestations: write
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Image name and tags
+        id: meta
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          # GHCR repository names must be lowercase
+          image="ghcr.io/${OWNER,,}/counterparty-risk-bff"
+          tag="sha-${GITHUB_SHA::12}"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Image: \`$image:$tag\` (also tagged \`main\`)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build image
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: >
+          docker build --pull --file "$DOCKERFILE"
+          --label "org.opencontainers.image.source=$REPO_URL"
+          --label "org.opencontainers.image.revision=$GITHUB_SHA"
+          --label "org.opencontainers.image.description=Counterparty Risk demo (Angular + BFF, synthetic data)"
+          --tag "$IMAGE:$TAG" --tag "$IMAGE:main" .
+
+      # Same gate as the PR container scan: nothing is pushed if it fails
+      - name: Trivy scan (blocking)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          image-ref: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
+          scanners: vuln,secret,misconfig
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          format: table
+          exit-code: "1"
+
+      - name: Push to GHCR
+        id: push
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$ACTOR" --password-stdin
+          # Immutable tag first, moving tag last: "main" never points to an image that failed to push
+          docker push "$IMAGE:$TAG"
+          docker push "$IMAGE:main"
+          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE:$TAG" | cut -d@ -f2)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "Digest: \`$digest\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build provenance attestation
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.meta.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Logout from GHCR
+        if: always()
+        run: docker logout ghcr.io
+
+  deploy:
+    name: Deploy on Dokploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: publish
+    # The Dokploy API key lives in this environment only (add required reviewers to gate deploys)
+    environment:
+      name: production
+    permissions: {}
+    env:
+      DOKPLOY_URL: https://dokploy.yvadev.com
+    steps:
+      - name: Trigger Dokploy deployment
+        env:
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          COMPOSE_ID: ${{ vars.DOKPLOY_COMPOSE_ID }}
+          TAG: ${{ needs.publish.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DOKPLOY_API_KEY:-}" ] || [ -z "${COMPOSE_ID:-}" ]; then
+            echo "::error::Set the DOKPLOY_API_KEY secret and the DOKPLOY_COMPOSE_ID variable in the production environment"
+            exit 1
+          fi
+          # jq builds the JSON body: no shell interpolation of external values into the payload
+          body=$(jq -n --arg id "$COMPOSE_ID" --arg title "Release $TAG" \
+            '{composeId: $id, title: $title}')
+          # The deployment is queued by Dokploy: follow it in the Dokploy Deployments tab
+          curl --fail-with-body --silent --show-error --max-time 30 \
+            --request POST "$DOKPLOY_URL/api/compose.deploy" \
+            --header "x-api-key: $DOKPLOY_API_KEY" \
+            --header "Content-Type: application/json" \
+            --data "$body"
+          echo "Dokploy deployment queued for \`$TAG\`." >> "$GITHUB_STEP_SUMMARY"
