@@ -40,6 +40,8 @@ jobs:
     name: Build, scan and push the BFF image
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # A manual dispatch from another branch must never overwrite the "main" tag nor deploy
+    if: github.ref == 'refs/heads/main'
     permissions:
       contents: read
       # Push to ghcr.io with the GITHUB_TOKEN (no personal token)

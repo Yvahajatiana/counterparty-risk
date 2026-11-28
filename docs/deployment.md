@@ -36,7 +36,8 @@ push main ──► release.yml: docker build ─► Trivy (blocking) ─► pus
 Settings → Environments → `production`:
 - Secret `DOKPLOY_API_KEY`: the Dokploy API key.
 - Variable `DOKPLOY_COMPOSE_ID`: the compose ID.
-- Recommended: Deployment branches = `main` only; add yourself as required reviewer to approve each deploy.
+- Required: Deployment branches = `main` only (second barrier after the `refs/heads/main` guard of the workflow).
+- Recommended: add yourself as required reviewer to approve each deploy.
 
 ## Day-to-day
 - Merge to `main` → image published → Dokploy redeploys. Follow the build in Actions and the rollout in
